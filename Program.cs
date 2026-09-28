@@ -29,6 +29,21 @@ builder.Services.AddAuthentication(options =>
             ValidAudience = builder.Configuration["JwtSettings:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:SigningKey"]))
         };
+        options.Events= new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var token = context.Request.Query["access_token"];
+
+                var path = context.Request.Path;
+
+                if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = token;
+                } 
+                return Task.CompletedTask;
+            }
+        };// 'Without this block, the hub answers 401 (unauthorized) even though your API calls work fine. It is the most common authentication problem with SignalR.'
     });
         builder.Services.AddScoped<ITokenService, JwtTokenService>();
         builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
