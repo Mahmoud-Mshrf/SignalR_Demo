@@ -1,8 +1,18 @@
 {
   "version": 2,
-  "dgSpecHash": "uFAMz80ckAg=",
+  "dgSpecHash": "Wt6xq+1pqKM=",
   "success": true,
   "projectFilePath": "C:\\Users\\Mahmoud-PC\\source\\repos\\SignalR_Demo\\SignalR_Demo.csproj",
-  "expectedPackageFiles": [],
+  "expectedPackageFiles": [
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.aspnetcore.authentication.jwtbearer\\10.0.12\\microsoft.aspnetcore.authentication.jwtbearer.10.0.12.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.bcl.cryptography\\10.0.2\\microsoft.bcl.cryptography.10.0.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.identitymodel.abstractions\\8.19.2\\microsoft.identitymodel.abstractions.8.19.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.identitymodel.jsonwebtokens\\8.19.2\\microsoft.identitymodel.jsonwebtokens.8.19.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.identitymodel.logging\\8.19.2\\microsoft.identitymodel.logging.8.19.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.identitymodel.protocols\\8.19.2\\microsoft.identitymodel.protocols.8.19.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.identitymodel.protocols.openidconnect\\8.19.2\\microsoft.identitymodel.protocols.openidconnect.8.19.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\microsoft.identitymodel.tokens\\8.19.2\\microsoft.identitymodel.tokens.8.19.2.nupkg.sha512",
+    "C:\\Users\\Mahmoud-PC\\.nuget\\packages\\system.identitymodel.tokens.jwt\\8.19.2\\system.identitymodel.tokens.jwt.8.19.2.nupkg.sha512"
+  ],
   "logs": []
 }
