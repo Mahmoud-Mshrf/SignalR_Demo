@@ -65,6 +65,9 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
+# Local database created by the application
+signalr_demo.db*
+
 # Tye
 .tye/
 
