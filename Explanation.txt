@@ -1,0 +1,14 @@
+Every send starts with Clients. followed by a target, then .SendAsync("MessageName", data). This table is the one to keep open while you work.
+
+Code	                                    Who receives it	                                        Use it for
+
+Clients.User(userId)	                    All connections of one user	                            Notification to a person, private chat
+Clients.Users(ids)	                        All connections of several users	                    Both sides of a private chat
+Clients.Group(name)	                        Every connection in the group	                        Rooms, roles, companies, dashboards
+Clients.Groups(names)	                    Every connection in any listed group	                Send to several groups at once
+Clients.OthersInGroup(name)	                The group except the caller	                            “User is typing…”
+Clients.GroupExcept(name, connectionIds)	The group except listed connections	                    Rare
+Clients.Caller	                            Only the connection that made the call	                Replies, confirmations, personal errors
+Clients.Others	                            Everyone except the caller	                            Rare
+Clients.All	                                Everyone connected	                                    System-wide announcements
+Clients.Client(connectionId)	            Exactly one tab	                                        Rare. Prefer User

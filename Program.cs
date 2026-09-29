@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 using SignalR_Demo.Hubs;
 using SignalR_Demo.Services;
@@ -45,8 +46,9 @@ builder.Services.AddAuthentication(options =>
             }
         };// 'Without this block, the hub answers 401 (unauthorized) even though your API calls work fine. It is the most common authentication problem with SignalR.'
     });
-        builder.Services.AddScoped<ITokenService, JwtTokenService>();
-        builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<ITokenService, JwtTokenService>();
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddSingleton<IUserIdProvider,UserIdProvider>();
 
 var app = builder.Build();
 

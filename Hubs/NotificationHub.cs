@@ -2,26 +2,19 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace SignalR_Demo.Hubs;
 
-public class NotificationHub : Hub
+
+public interface INotificationClient
 {
-    public async Task SendAll(string text)
-    {
-        await Clients.All.SendAsync("ReceiveText",text);
-    }
+    Task ReceiveNotification(NotificationDto notificationDto);
 }
 
-public class ChatHub : Hub
+public class NotificationHub : Hub<INotificationClient>
 {
-    public async Task SendAll(string text)
-    {
-        await Clients.All.SendAsync("ReceiveText",text);
-    }
+    
 }
 
-public class DashboardHub : Hub
+public class NotificationDto
 {
-    public async Task SendAll(string text)
-    {
-        await Clients.All.SendAsync("ReceiveText",text);
-    }
+    public string NotificationTitle {get;set;}
+    public object Data {get;set;}
 }
