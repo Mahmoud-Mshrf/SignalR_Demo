@@ -6,35 +6,29 @@ public class Chat
 {
     public Guid Id { get; set; }
     public DateTime CreatedAt { get; set; }
-
+    public string UserPairKey {get; private set;} = null!;
     public List<ChatParticipant> Participants { get; set; } = [];
     public List<Message> Messages { get; set; } = [];
-}
 
-public class ChatParticipant
-{
-    public Guid ChatId { get; set; }
-    public Chat Chat { get; set; } = null!;
 
-    public Guid UserId { get; set; }
-    public User User { get; set; } = null!;
+    public static Chat Create(Guid userAId, Guid userBId)
+    {
+        if (userAId == userBId)
+            throw new ArgumentException("A user cannot chat with themselves.");
 
-    public DateTime LastReadAt { get; set; }
-}
+        var firstId = userAId.CompareTo(userBId) < 0
+            ? userAId
+            : userBId;
 
-public class Message
-{
-    public Guid Id { get; set; }
+        var secondId = userAId.CompareTo(userBId) < 0
+            ? userBId
+            : userAId;
 
-    public Guid ChatId { get; set; }
-    public Chat Chat { get; set; } = null!;
-
-    public Guid SenderId { get; set; }
-    public User Sender { get; set; } = null!;
-
-    public string Content { get; set; } = string.Empty;
-
-    public DateTime SentAt { get; set; }
-    public DateTime? EditedAt { get; set; }
-    public DateTime? DeletedAt { get; set; }
+        return new Chat
+        {
+            Id = Guid.NewGuid(),
+            UserPairKey = $"{firstId}_{secondId}",
+            CreatedAt = DateTime.UtcNow
+        };
+    }
 }

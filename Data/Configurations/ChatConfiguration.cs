@@ -12,8 +12,12 @@ public sealed class ChatConfiguration : IEntityTypeConfiguration<Chat>
 
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.Id)
-            .ValueGeneratedNever();
+           builder.Property(x => x.UserPairKey)
+            .IsRequired()
+            .HasMaxLength(73);
+
+        builder.HasIndex(x => x.UserPairKey)
+            .IsUnique();
 
         builder.Property(x => x.CreatedAt)
             .IsRequired();
