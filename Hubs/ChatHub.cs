@@ -32,13 +32,20 @@ public sealed class ChatHub(IChatService chatService)
             senderId,
             receiverId);
 
+        var newId = Guid.NewGuid();
+
+        Console.WriteLine($"Generated ID: {newId}");
+
         var message = new Message
         {
+            Id = newId,
             ChatId = chatId,
             SenderId = senderId,
             Content = content,
             SentAt = DateTime.UtcNow
         };
+
+        Console.WriteLine($"Message ID after creation: {message.Id}");
 
         await chatService.AddMessageAsync(message);
 

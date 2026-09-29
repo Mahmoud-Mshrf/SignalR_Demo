@@ -54,6 +54,10 @@ public sealed class ChatService(AppDbContext context)
 
     public async Task AddMessageAsync(Message message)
     {
+        Console.WriteLine($"Message ID: {message.Id}");
+        Console.WriteLine($"Chat ID: {message.ChatId}");
+        Console.WriteLine($"Sender ID: {message.SenderId}");
+
         context.Messages.Add(message);
 
         await context.SaveChangesAsync();

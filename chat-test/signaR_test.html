@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>SignalR Chat Test</title>
+</head>
+
+<body>
+
+<h1>SignalR Chat Test</h1>
+
+<section>
+    <h3>Connection</h3>
+
+    <input
+        id="token"
+        type="text"
+        placeholder="JWT Token"
+        style="width: 600px;"
+    />
+
+    <button id="connectBtn">
+        Connect
+    </button>
+
+    <p id="connectionStatus">Disconnected</p>
+</section>
+
+<hr>
+
+<section>
+    <h3>Send Message</h3>
+
+    <input
+        id="receiverId"
+        type="text"
+        placeholder="Receiver User ID"
+        style="width: 400px;"
+    />
+
+    <br><br>
+
+    <input
+        id="message"
+        type="text"
+        placeholder="Message"
+        style="width: 400px;"
+    />
+
+    <button id="sendBtn">
+        Send
+    </button>
+</section>
+
+<hr>
+
+<h3>Received Messages</h3>
+
+<div id="messages"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@10.0.0/dist/browser/signalr.min.js"></script>
+
+<script>
+
+let connection = null;
+
+const tokenInput = document.getElementById("token");
+const receiverInput = document.getElementById("receiverId");
+const messageInput = document.getElementById("message");
+
+const connectBtn = document.getElementById("connectBtn");
+const sendBtn = document.getElementById("sendBtn");
+
+const connectionStatus =
+    document.getElementById("connectionStatus");
+
+const messages =
+    document.getElementById("messages");
+
+
+connectBtn.addEventListener("click", async () => {
+
+    const token = tokenInput.value.trim();
+
+    if (!token) {
+        alert("Enter JWT token first.");
+        return;
+    }
+
+    connection = new signalR.HubConnectionBuilder()
+        .withUrl("https://localhost:7061/hubs/chat", {
+            accessTokenFactory: () => token
+        })
+        .withAutomaticReconnect()
+        .build();
+
+
+    // Receive message from server
+    connection.on("ReceiveMessage", (message) => {
+
+        const div = document.createElement("div");
+
+        div.innerHTML = `
+            <p>
+                <strong>Chat:</strong> ${message.chatId}<br>
+                <strong>Sender:</strong> ${message.senderId}<br>
+                <strong>Message:</strong> ${message.content}<br>
+                <strong>Sent:</strong> ${message.sentAt}
+            </p>
+
+            <hr>
+        `;
+
+        messages.appendChild(div);
+    });
+
+
+    connection.onreconnecting(() => {
+        connectionStatus.textContent =
+            "Reconnecting...";
+    });
+
+
+    connection.onreconnected(() => {
+        connectionStatus.textContent =
+            "Connected again";
+    });
+
+
+    connection.onclose(() => {
+        connectionStatus.textContent =
+            "Disconnected";
+    });
+
+
+    try {
+
+        await connection.start();
+
+        connectionStatus.textContent =
+            "Connected";
+
+        console.log("SignalR connected.");
+
+    } catch (error) {
+
+        console.error(error);
+
+        connectionStatus.textContent =
+            "Connection failed";
+
+        alert(error);
+    }
+});
+
+
+sendBtn.addEventListener("click", async () => {
+
+    if (!connection ||
+        connection.state !== signalR.HubConnectionState.Connected) {
+
+        alert("Connect first.");
+        return;
+    }
+
+    const receiverId =
+        receiverInput.value.trim();
+
+    const content =
+        messageInput.value.trim();
+
+    if (!receiverId || !content) {
+        alert("Receiver and message are required.");
+        return;
+    }
+
+    try {
+
+        await connection.invoke(
+            "SendPrivateMessage",
+            receiverId,
+            content
+        );
+
+        messageInput.value = "";
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(error);
+    }
+});
+
+</script>
+
+</body>
+</html>

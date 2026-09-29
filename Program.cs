@@ -70,15 +70,15 @@ await using (var scope = app.Services.CreateAsyncScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     await dbContext.Database.EnsureCreatedAsync();
 }
-
+app.UseHttpsRedirection();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 
+app.MapControllers();
 
 app.MapHub<NotificationHub>("/hubs/notifications");
 app.MapHub<ChatHub>("/hubs/chat");
 app.MapHub<DashboardHub>("/hub/dashboard");
-app.MapControllers();
 
 app.Run();

@@ -1,0 +1,42 @@
+@baseUrl = http://localhost:5089
+@email = test.user@example.com
+@password = ChangeMe123!
+@email2 = test.user2@example.com
+### Register
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test User",
+  "email": "{{email}}",
+  "phoneNumber": "+15551234567",
+  "password": "{{password}}"
+}
+
+### Register 2 
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Test User 2",
+  "email": "{{email2}}",
+  "phoneNumber": "+15551234567",
+  "password": "{{password}}"
+}
+### Login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email}}",
+  "password": "{{password}}"
+}
+
+### Login2
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{email2}}",
+  "password": "{{password}}"
+}
