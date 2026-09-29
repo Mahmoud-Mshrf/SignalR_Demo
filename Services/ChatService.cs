@@ -4,45 +4,45 @@ using SignalR_Demo.Models.Chat_Models;
 
 namespace SignalR_Demo.Services;
 
-public class ChatService(AppDbContext context,Guid currentUserId) : IChatService
+public sealed class ChatService(AppDbContext context)
+    : IChatService
 {
-    public async Task<Guid> CreateChat(Guid OtherUserId)
+    public async Task<Guid> GetOrCreateChatAsync(
+        Guid currentUserId,
+        Guid otherUserId)
     {
-        var currentUser = await context.Users.FindAsync(currentUserId) ?? 
-            throw new ArgumentNullException("OtherUser is not found");
+        var firstId = currentUserId.CompareTo(otherUserId) < 0
+            ? currentUserId
+            : otherUserId;
 
-        var otherUser = await context.Users.FindAsync(OtherUserId) ?? 
-            throw new ArgumentNullException("OtherUser is not found");
-        
-        var firstId = currentUserId.CompareTo(OtherUserId) < 0 ?
-            currentUserId : OtherUserId;
+        var secondId = currentUserId.CompareTo(otherUserId) < 0
+            ? otherUserId
+            : currentUserId;
 
-        var secondId = currentUserId.CompareTo(OtherUserId) < 0 ?
-            OtherUserId : currentUserId;
-        
-        var pairKey= $"{firstId}_{secondId}";
+        var pairKey = $"{firstId}_{secondId}";
 
-        var existingChat = await context.Chats.FirstOrDefaultAsync(x=>x.UserPairKey == pairKey);
+        var existingChat = await context.Chats
+            .FirstOrDefaultAsync(x => x.UserPairKey == pairKey);
 
-        if (existingChat is not null )
-        {
+        if (existingChat is not null)
             return existingChat.Id;
-        }
 
-        var chat = Chat.Create(currentUserId,OtherUserId);
+        var chat = Chat.Create(
+            currentUserId,
+            otherUserId);
 
         chat.Participants.Add(new ChatParticipant
         {
             ChatId = chat.Id,
-            UserId=currentUserId,
-            LastReadAt= DateTime.UtcNow
+            UserId = currentUserId,
+            LastReadAt = DateTime.UtcNow
         });
-        
+
         chat.Participants.Add(new ChatParticipant
         {
             ChatId = chat.Id,
-            UserId=OtherUserId,
-            LastReadAt= DateTime.UtcNow
+            UserId = otherUserId,
+            LastReadAt = DateTime.UtcNow
         });
 
         context.Chats.Add(chat);
@@ -51,9 +51,19 @@ public class ChatService(AppDbContext context,Guid currentUserId) : IChatService
 
         return chat.Id;
     }
-}
 
+    public async Task AddMessageAsync(Message message)
+    {
+        context.Messages.Add(message);
+
+        await context.SaveChangesAsync();
+    }
+}
 public interface IChatService
 {
-    Task<Guid> CreateChat(Guid OtherUserId);
+    Task<Guid> GetOrCreateChatAsync(
+        Guid currentUserId,
+        Guid otherUserId);
+
+    Task AddMessageAsync(Message message);
 }

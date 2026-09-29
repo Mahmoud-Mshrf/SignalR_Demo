@@ -62,7 +62,7 @@ builder.Services.AddScoped<ITokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IUserIdProvider,UserIdProvider>();
-
+builder.Services.AddScoped<IChatService, ChatService>();
 var app = builder.Build();
 
 await using (var scope = app.Services.CreateAsyncScope())
