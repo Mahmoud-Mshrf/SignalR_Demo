@@ -2,7 +2,7 @@ namespace SignalR_Demo.Models;
 
 public class User
 {
-    public string Id {get;set;}
+    public Guid Id { get; set; }
     public string PhoneNumber { get;  set; } = null!;
     public Guid? TenantId { get;  set; }
     public string Name { get;  set; } = null!;
@@ -19,3 +19,4 @@ public enum UserRole
     Manager,
     Employee
 }
+

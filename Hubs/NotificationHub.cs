@@ -18,3 +18,4 @@ public class NotificationDto
     public string NotificationTitle {get;set;}
     public object Data {get;set;}
 }
+
