@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SignalR_Demo.Data;
+using SignalR_Demo.Dtos;
 using SignalR_Demo.Models.Chat_Models;
 
 namespace SignalR_Demo.Services;
@@ -62,6 +63,19 @@ public sealed class ChatService(AppDbContext context)
 
         await context.SaveChangesAsync();
     }
+
+    public async Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page=1,int size=10)
+    {
+        var chats =await context.Chats.Include(x=>x.Participants).Where(x=>x.Participants.Any(x=>x.UserId==UserId)).Skip((page-1)*size).Take(size).ToListAsync();
+        List<ChatDto> list= new();
+        foreach (var chat in chats)
+        {
+            var receiver = chat.Participants.First(x=>x.UserId!=UserId);
+            var lastMessage = chat.Messages.OrderBy(x=>x.SentAt).First();
+            list.Add(new ChatDto(chat.Id,receiver.UserId,receiver.User.Name,lastMessage.Content,lastMessage.SentAt));
+        }
+        return  list;
+    }
 }
 public interface IChatService
 {
@@ -70,4 +84,5 @@ public interface IChatService
         Guid otherUserId);
 
     Task AddMessageAsync(Message message);
+    Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page=1,int size=10);
 }
