@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SignalR_Demo.Data;
 using SignalR_Demo.Dtos;
+using SignalR_Demo.Models;
 using SignalR_Demo.Models.Chat_Models;
 
 namespace SignalR_Demo.Services;
@@ -64,17 +65,46 @@ public sealed class ChatService(AppDbContext context)
         await context.SaveChangesAsync();
     }
 
-    public async Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page=1,int size=10)
+    public async Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page,int size)
     {
-        var chats =await context.Chats.Include(x=>x.Participants).Where(x=>x.Participants.Any(x=>x.UserId==UserId)).Skip((page-1)*size).Take(size).ToListAsync();
+        var chats = await context.Chats
+            .Include(chat => chat.Participants)
+                .ThenInclude(participant => participant.User)
+            .Include(chat => chat.Messages)
+            .Where(chat => chat.Participants.Any(participant => participant.UserId == UserId))
+            .Skip((page - 1) * size)
+            .Take(size)
+            .ToListAsync();
         List<ChatDto> list= new();
         foreach (var chat in chats)
         {
             var receiver = chat.Participants.First(x=>x.UserId!=UserId);
             var lastMessage = chat.Messages.OrderBy(x=>x.SentAt).First();
-            list.Add(new ChatDto(chat.Id,receiver.UserId,receiver.User.Name,lastMessage.Content,lastMessage.SentAt));
+            bool sentByMe = lastMessage.SenderId==UserId;
+            list.Add(new ChatDto(chat.Id,receiver.UserId,receiver.User.Name,lastMessage.Content,lastMessage.SentAt,sentByMe));
         }
         return  list;
+    }
+
+    public async Task<List<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
+    {
+        var chat =await context.Chats.Include(x=>x.Participants).FirstOrDefaultAsync(c=>c.Id==ChatId);
+        if (chat is null)
+        {
+            throw new ArgumentNullException();
+        }
+        if (!chat.Participants.Any(x=>x.UserId==userId))
+        {
+            throw new UnauthorizedAccessException();
+        }
+
+        var messages =await context.Messages.Where(x=>x.ChatId==ChatId).Skip((page - 1)* size).Take(size).OrderBy(x=>x.SentAt).ToListAsync();
+        var msgs= new List<MessageDto>();
+        foreach (var msg in messages)
+        {
+            msgs.Add(new MessageDto(ChatId,msg.SenderId,msg.Content,msg.SentAt));
+        }
+        return msgs;
     }
 }
 public interface IChatService
@@ -84,5 +114,6 @@ public interface IChatService
         Guid otherUserId);
 
     Task AddMessageAsync(Message message);
-    Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page=1,int size=10);
+    Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
+    Task<List<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
 }
