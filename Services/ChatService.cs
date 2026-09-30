@@ -86,7 +86,7 @@ public sealed class ChatService(AppDbContext context)
         return  list;
     }
 
-    public async Task<List<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
+    public async Task<List<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
     {
         var chat =await context.Chats.Include(x=>x.Participants).FirstOrDefaultAsync(c=>c.Id==ChatId);
         if (chat is null)
@@ -99,10 +99,10 @@ public sealed class ChatService(AppDbContext context)
         }
 
         var messages =await context.Messages.Where(x=>x.ChatId==ChatId).Skip((page - 1)* size).Take(size).OrderBy(x=>x.SentAt).ToListAsync();
-        var msgs= new List<MessageDto>();
+        var msgs= new List<ChatMessageDto>();
         foreach (var msg in messages)
         {
-            msgs.Add(new MessageDto(ChatId,msg.SenderId,msg.Content,msg.SentAt));
+            msgs.Add(new ChatMessageDto(msg.SenderId,msg.Content,msg.SentAt));
         }
         return msgs;
     }
@@ -115,5 +115,5 @@ public interface IChatService
 
     Task AddMessageAsync(Message message);
     Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
-    Task<List<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
+    Task<List<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
 }
