@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using SignalR_Demo.Data;
 using SignalR_Demo.Dtos;
+using SignalR_Demo.Helpers;
 using SignalR_Demo.Models;
 using SignalR_Demo.Models.Chat_Models;
 
@@ -65,7 +66,7 @@ public sealed class ChatService(AppDbContext context)
         await context.SaveChangesAsync();
     }
 
-    public async Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page,int size)
+    public async Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size)
     {
         var chats = await context.Chats
             .Include(chat => chat.Participants)
@@ -83,10 +84,18 @@ public sealed class ChatService(AppDbContext context)
             bool sentByMe = lastMessage.SenderId==UserId;
             list.Add(new ChatDto(chat.Id,receiver.UserId,receiver.User.Name,lastMessage.Content,lastMessage.SentAt,sentByMe));
         }
-        return  list;
+        var itemsCount = context.Chats.Where(c=>c.Participants.Any(x=>x.UserId==UserId)).Count();
+        return new PaginatedList<ChatDto>
+        {
+            Items=list,
+            Page=page,
+            PageSize=size,
+            TotalCount=itemsCount,
+            HasNextPage= (((page-1)*size) + list.Count ) > itemsCount
+        };
     }
 
-    public async Task<List<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
+    public async Task<PaginatedList<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
     {
         var chat =await context.Chats.Include(x=>x.Participants).FirstOrDefaultAsync(c=>c.Id==ChatId);
         if (chat is null)
@@ -104,7 +113,15 @@ public sealed class ChatService(AppDbContext context)
         {
             msgs.Add(new ChatMessageDto(msg.SenderId,msg.Content,msg.SentAt));
         }
-        return msgs;
+        var itemsCount = context.Messages.Where(x=>x.ChatId==ChatId).Count();
+        return new PaginatedList<ChatMessageDto>
+        {
+            Items=msgs,
+            Page=page,
+            PageSize=size,
+            TotalCount=itemsCount,
+            HasNextPage= (((page-1)*size) + msgs.Count ) > itemsCount
+        };
     }
 }
 public interface IChatService
@@ -114,6 +131,6 @@ public interface IChatService
         Guid otherUserId);
 
     Task AddMessageAsync(Message message);
-    Task<List<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
-    Task<List<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
+    Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
+    Task<PaginatedList<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
 }
