@@ -20,6 +20,7 @@
     let renderedMessageKeys = new Set();
     let groupMemberNames = new Map();
     let chatRefreshVersion = 0;
+    let groupRefreshVersion = 0;
     let conversationVersion = 0;
     let pendingNewConversation = null;
     let authMode = "login";
@@ -415,7 +416,10 @@
     }
 
     async function refreshGroups() {
-        groups = await apiRequest("/api/groups");
+        const version = ++groupRefreshVersion;
+        const updatedGroups = await apiRequest("/api/groups");
+        if (version !== groupRefreshVersion) return;
+        groups = updatedGroups;
         if (activeList === "groups") renderChatList();
     }
 
@@ -465,6 +469,7 @@
                         <span class="chat-line"><span class="chat-name">${escapeHtml(group.groupName)}</span>${group.isAdmin ? `<span class="role-mark" title="You manage this group">ADMIN</span>` : ""}</span>
                         <span class="chat-preview">${group.isAdmin ? "Managed by you" : "Group conversation"}</span>
                     </span>
+                    ${Number(group.unreadMessages) > 0 ? `<span class="unread-badge" aria-label="${Number(group.unreadMessages)} unread group messages">${Number(group.unreadMessages) > 99 ? "99+" : Number(group.unreadMessages)}</span>` : ""}
                 </button>`).join("");
             list.querySelectorAll("[data-group-id]").forEach(button => {
                 button.addEventListener("click", () => navigate(`/group/${button.dataset.groupId}`));
@@ -689,6 +694,8 @@
         try {
             await ensureHubConnected();
             await connection.invoke("JoinRoom", groupId);
+            await apiRequest(`/api/groups/${encodeURIComponent(groupId)}/read`, { method: "POST" });
+            await refreshGroups();
             const [history, members] = await Promise.all([
                 loadGroupHistory(groupId),
                 apiRequest(`/api/groups/${encodeURIComponent(groupId)}/members`)
@@ -702,6 +709,15 @@
         } catch (error) {
             if (version !== conversationVersion || currentGroupId !== groupId) return;
             document.getElementById("message-list").innerHTML = `<p class="thread-error">${escapeHtml(error.message || "Group messages could not be loaded.")}</p>`;
+        }
+    }
+
+    async function markGroupAsRead(groupId) {
+        try {
+            await apiRequest(`/api/groups/${encodeURIComponent(groupId)}/read`, { method: "POST" });
+            await refreshGroups();
+        } catch (error) {
+            showToast("Group could not be marked as read", error.message);
         }
     }
 
@@ -834,6 +850,7 @@
         connection.onreconnected(() => {
             setConnectionStatus("connected", "Connected");
             void refreshChats().catch(error => showToast("Chats could not be updated", error.message));
+            void refreshGroups().catch(error => showToast("Groups could not be updated", error.message));
         });
         connection.onclose(() => setConnectionStatus("disconnected", "Disconnected · retry"));
 
@@ -904,10 +921,16 @@
 
         const group = groups.find(item => String(item.groupId).toLowerCase() === chatId);
         if (group) {
-            if (currentGroupId === chatId && historyReadyChatId === chatId) {
-                appendMessage(message, { kind: "group", groupId: chatId });
+            const viewingGroup = currentGroupId === chatId && document.visibilityState === "visible";
+            if (viewingGroup) {
+                if (historyReadyChatId === chatId) {
+                    appendMessage(message, { kind: "group", groupId: chatId });
+                }
+                void markGroupAsRead(chatId);
+            } else {
+                void refreshGroups().catch(error => showToast("Groups could not be updated", error.message));
             }
-            if (!isMine && currentGroupId !== chatId) {
+            if (!isMine && !viewingGroup) {
                 showToast(
                     group.groupName,
                     message.content || "",
@@ -987,6 +1010,12 @@
     window.addEventListener("popstate", () => {
         if (!session) renderLogin();
         else void renderRoute();
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible" && currentGroupId) {
+            void markGroupAsRead(currentGroupId);
+        }
     });
 
     if (session) {

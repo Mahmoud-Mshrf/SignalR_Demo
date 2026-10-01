@@ -108,6 +108,8 @@ public sealed class GroupService(AppDbContext context) : IGroupService
                 participant.GroupId,
                 participant.Group.GroupName,
                 participant.IsAdmin,
+                UnreadMessages = participant.Group.Messages.Count(message =>
+                    message.SenderId != userId && message.SentAt > participant.LastReadAt),
                 participant.Group.CreatedAt
             })
             .ToListAsync(cancellationToken);
@@ -116,8 +118,31 @@ public sealed class GroupService(AppDbContext context) : IGroupService
             group.GroupId,
             group.GroupName,
             group.IsAdmin,
+            group.UnreadMessages,
             new DateTimeOffset(DateTime.SpecifyKind(group.CreatedAt, DateTimeKind.Utc))))
             .ToList();
+    }
+
+    public async Task MarkGroupAsReadAsync(
+        Guid userId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
+    {
+        var participant = await context.GroupParticipants.FirstOrDefaultAsync(
+            item => item.GroupId == groupId && item.UserId == userId,
+            cancellationToken);
+
+        if (participant is null)
+        {
+            await GetRequiredGroupParticipantAsync(
+                userId,
+                groupId,
+                "Only group members can mark messages as read.",
+                cancellationToken);
+        }
+
+        participant!.LastReadAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<bool> AddParticipantAsync(
@@ -279,6 +304,10 @@ public interface IGroupService
         CancellationToken cancellationToken = default);
     Task<List<GroupSummaryDto>> GetJoinedGroupsAsync(
         Guid userId,
+        CancellationToken cancellationToken = default);
+    Task MarkGroupAsReadAsync(
+        Guid userId,
+        Guid groupId,
         CancellationToken cancellationToken = default);
     Task<bool> AddParticipantAsync(
         Guid managerId,

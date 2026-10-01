@@ -23,4 +23,5 @@ public sealed record GroupSummaryDto(
     Guid GroupId,
     string GroupName,
     bool IsAdmin,
+    int UnreadMessages,
     DateTimeOffset CreatedAt);

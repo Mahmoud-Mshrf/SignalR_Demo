@@ -90,6 +90,22 @@ public sealed class GroupsController(
         return Ok(messages);
     }
 
+    [HttpPost("{groupId:guid}/read")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> MarkGroupAsRead(
+        Guid groupId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+            return Unauthorized();
+
+        await groupService.MarkGroupAsReadAsync(userId, groupId, cancellationToken);
+        return NoContent();
+    }
+
     [HttpGet("{groupId:guid}/users")]
     [ProducesResponseType<List<GroupUserDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
