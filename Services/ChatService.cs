@@ -66,32 +66,59 @@ public sealed class ChatService(AppDbContext context)
         await context.SaveChangesAsync();
     }
 
+    public async Task<bool> MarkChatAsReadAsync(Guid chatId, Guid currentUserId)
+    {
+        var participant = await context.ChatParticipants
+            .FirstOrDefaultAsync(x =>
+                x.ChatId == chatId &&
+                x.UserId == currentUserId);
+
+        if (participant is null)
+            return false;
+
+        participant.LastReadAt = DateTime.UtcNow;
+
+        await context.SaveChangesAsync();
+
+        return true;
+    }
+
     public async Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size)
     {
         var chats = await context.Chats
-            .Include(chat => chat.Participants)
-                .ThenInclude(participant => participant.User)
-            .Include(chat => chat.Messages)
             .Where(chat => chat.Participants.Any(participant => participant.UserId == UserId))
             .Skip((page - 1) * size)
             .Take(size)
+            .Select(chat => new
+            {
+                ChatId = chat.Id,
+                Receiver = chat.Participants.First(participant => participant.UserId != UserId),
+                LastMessage = chat.Messages.OrderBy(message => message.SentAt).First(),
+                UnreadMessages = chat.Messages.Count(message =>
+                    message.SentAt > chat.Participants
+                        .First(participant => participant.UserId != UserId)
+                        .LastReadAt)
+            })
+            .Select(chat => new ChatDto(
+                chat.ChatId,
+                chat.Receiver.UserId,
+                chat.Receiver.User.Name,
+                chat.LastMessage.Content,
+                chat.LastMessage.SentAt,
+                chat.LastMessage.SenderId == UserId,
+                chat.UnreadMessages))
             .ToListAsync();
-        List<ChatDto> list= new();
-        foreach (var chat in chats)
-        {
-            var receiver = chat.Participants.First(x=>x.UserId!=UserId);
-            var lastMessage = chat.Messages.OrderBy(x=>x.SentAt).First();
-            bool sentByMe = lastMessage.SenderId==UserId;
-            list.Add(new ChatDto(chat.Id,receiver.UserId,receiver.User.Name,lastMessage.Content,lastMessage.SentAt,sentByMe));
-        }
-        var itemsCount = context.Chats.Where(c=>c.Participants.Any(x=>x.UserId==UserId)).Count();
+
+        var itemsCount = await context.Chats
+            .CountAsync(chat => chat.Participants.Any(participant => participant.UserId == UserId));
+
         return new PaginatedList<ChatDto>
         {
-            Items=list,
-            Page=page,
-            PageSize=size,
-            TotalCount=itemsCount,
-            HasNextPage= (((page-1)*size) + list.Count ) > itemsCount
+            Items = chats,
+            Page = page,
+            PageSize = size,
+            TotalCount = itemsCount,
+            HasNextPage = (((page - 1) * size) + chats.Count) > itemsCount
         };
     }
 
@@ -120,7 +147,7 @@ public sealed class ChatService(AppDbContext context)
             Page=page,
             PageSize=size,
             TotalCount=itemsCount,
-            HasNextPage= (((page-1)*size) + msgs.Count ) > itemsCount
+            HasNextPage= (((page-1)*size) + msgs.Count ) < itemsCount
         };
     }
 }
@@ -131,6 +158,7 @@ public interface IChatService
         Guid otherUserId);
 
     Task AddMessageAsync(Message message);
+    Task<bool> MarkChatAsReadAsync(Guid chatId, Guid currentUserId);
     Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
     Task<PaginatedList<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
 }

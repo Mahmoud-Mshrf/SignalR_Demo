@@ -44,4 +44,17 @@ public sealed class ChatsController(IChatService chatService) : ControllerBase
             return Forbid();
         }
     }
+
+    [HttpPost("{chatId:guid}/read")]
+    public async Task<IActionResult> MarkChatAsRead(Guid chatId)
+    {
+        var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (!Guid.TryParse(userIdClaim, out var userId))
+            return Unauthorized();
+
+        var markedAsRead = await chatService.MarkChatAsReadAsync(chatId, userId);
+
+        return markedAsRead ? NoContent() : NotFound();
+    }
 }
