@@ -2,14 +2,20 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using SignalR_Demo.Data;
 using SignalR_Demo.Dtos;
+using SignalR_Demo.Models;
 using SignalR_Demo.Models.Chat_Models;
 using SignalR_Demo.Services;
 
 namespace SignalR_Demo.Hubs;
 [Authorize]
-public sealed class ChatHub(IChatService chatService)
+public sealed class ChatHub(IChatService chatService,GroupService groupService)
     : Hub<IChatClient>
 {
+    public override Task OnConnectedAsync()
+    {
+        // var userGroups = chatService.
+        return base.OnConnectedAsync();
+    }
     public async Task SendPrivateMessage(
         Guid receiverId,
         string content)
@@ -49,7 +55,7 @@ public sealed class ChatHub(IChatService chatService)
 
         await chatService.AddMessageAsync(message);
 
-        var dto = new MessageDto(
+        var dto = new SendMessageDto(
             message.ChatId,
             message.SenderId,
             message.Content,
@@ -60,8 +66,15 @@ public sealed class ChatHub(IChatService chatService)
             receiverId.ToString())
             .ReceiveMessage(dto);
     }
+    public async Task SendGroupMessage(string content,Guid groupId,Guid userId)
+    {
+        var message =await groupService.AddGroupMessageAsync(groupId,content,userId);
+        await Clients.Group(RoomGroup(groupId.ToString())).ReceiveMessage(message);
+    }
+
+    private string RoomGroup(string id) => "group_"+$"{id}";
 }
 public interface IChatClient
 {
-    Task ReceiveMessage(MessageDto dto);
+    Task ReceiveMessage(SendMessageDto dto);
 }

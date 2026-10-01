@@ -124,7 +124,7 @@ public sealed class ChatService(AppDbContext context)
         };
     }
 
-    public async Task<PaginatedList<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
+    public async Task<PaginatedList<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
     {
         var chat =await context.Chats.Include(x=>x.Participants).FirstOrDefaultAsync(c=>c.Id==ChatId);
         if (chat is null)
@@ -142,13 +142,13 @@ public sealed class ChatService(AppDbContext context)
             .Skip((page - 1) * size)
             .Take(size)
             .ToListAsync();
-        var msgs= new List<ChatMessageDto>();
+        var msgs= new List<MessageDto>();
         foreach (var msg in messages)
         {
-            msgs.Add(new ChatMessageDto(msg.SenderId,msg.Content,msg.SentAt));
+            msgs.Add(new MessageDto(msg.SenderId,msg.Content,msg.SentAt));
         }
         var itemsCount = context.Messages.Where(x=>x.ChatId==ChatId).Count();
-        return new PaginatedList<ChatMessageDto>
+        return new PaginatedList<MessageDto>
         {
             Items=msgs,
             Page=page,
@@ -167,5 +167,5 @@ public interface IChatService
     Task AddMessageAsync(Message message);
     Task<bool> MarkChatAsReadAsync(Guid chatId, Guid currentUserId);
     Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
-    Task<PaginatedList<ChatMessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
+    Task<PaginatedList<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
 }

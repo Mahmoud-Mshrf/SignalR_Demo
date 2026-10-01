@@ -42,6 +42,39 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         return group.Id;
     }
 
+    public async Task<SendMessageDto> AddGroupMessageAsync(Guid groupId, string content, Guid userId)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            throw new ArgumentException("Message content is required.", nameof(content));
+
+        content = content.Trim();
+        if (content.Length > 4000)
+            throw new ArgumentException("Message content cannot exceed 4000 characters.", nameof(content));
+
+        if (!await context.Groups.AnyAsync(group => group.Id == groupId))
+            throw new KeyNotFoundException("Group was not found.");
+
+        var isMember = await context.GroupParticipants.AnyAsync(participant =>
+            participant.GroupId == groupId && participant.UserId == userId);
+
+        if (!isMember)
+            throw new UnauthorizedAccessException("Only group members can send messages.");
+
+        var message = new GroupMessage
+        {
+            Id = Guid.NewGuid(),
+            GroupId = groupId,
+            SenderId = userId,
+            Content = content,
+            SentAt = DateTime.UtcNow
+        };
+
+        context.GroupMessages.Add(message);
+        await context.SaveChangesAsync();
+
+        return new SendMessageDto(groupId,message.SenderId,message.Content,message.SentAt);
+    }
+
     public async Task<bool> AddParticipantAsync(Guid managerId, Guid newParticipantId, Guid groupId)
     {
         await EnsureManagerAsync(managerId, groupId);
@@ -82,6 +115,14 @@ public sealed class GroupService(AppDbContext context) : IGroupService
                 participant.UserId,
                 participant.User.Name,
                 true))
+            .ToListAsync();
+    }
+
+    public Task<List<Guid>> GetJoinedGroupIdsAsync(Guid userId)
+    {
+        return context.GroupParticipants
+            .Where(participant => participant.UserId == userId)
+            .Select(participant => participant.GroupId)
             .ToListAsync();
     }
 
@@ -135,8 +176,10 @@ public sealed class GroupService(AppDbContext context) : IGroupService
 public interface IGroupService
 {
     Task<Guid> CreateGroupAsync(string groupName, Guid creatorId);
+    Task<SendMessageDto> AddGroupMessageAsync(Guid groupId, string content, Guid userId);
     Task<bool> AddParticipantAsync(Guid managerId, Guid newParticipantId, Guid groupId);
     Task<bool> RemoveParticipantAsync(Guid managerId, Guid participantId, Guid groupId);
     Task<List<GroupUserDto>> GetGroupMembersAsync(Guid currentUserId, Guid groupId);
+    Task<List<Guid>> GetJoinedGroupIdsAsync(Guid userId);
     Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(Guid managerId, Guid groupId);
 }
