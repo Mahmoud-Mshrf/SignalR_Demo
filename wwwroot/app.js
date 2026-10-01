@@ -505,8 +505,27 @@
 
     async function openGroupMembers(groupId) {
         const group = groups.find(item => String(item.groupId).toLowerCase() === groupId.toLowerCase());
+        if (!group) return;
+        const dialog = document.getElementById("members-dialog");
+        document.querySelector("#members-dialog .section-kicker").textContent = "GROUP MEMBERS";
+        document.getElementById("members-title").textContent = group.groupName;
+        document.getElementById("members-list").innerHTML = `<p class="thread-loading">Loading roster…</p>`;
+        document.getElementById("members-error").textContent = "";
+        dialog.showModal();
+
+        try {
+            const members = await apiRequest(`/api/groups/${encodeURIComponent(groupId)}/members`);
+            renderGroupMembers(members);
+        } catch (error) {
+            document.getElementById("members-error").textContent = error.message || "The roster could not be loaded.";
+        }
+    }
+
+    async function openGroupManagement(groupId) {
+        const group = groups.find(item => String(item.groupId).toLowerCase() === groupId.toLowerCase());
         if (!group?.isAdmin) return;
         const dialog = document.getElementById("members-dialog");
+        document.querySelector("#members-dialog .section-kicker").textContent = "GROUP MANAGEMENT";
         document.getElementById("members-title").textContent = group.groupName;
         document.getElementById("members-list").innerHTML = `<p class="thread-loading">Loading roster…</p>`;
         document.getElementById("members-error").textContent = "";
@@ -518,6 +537,16 @@
         } catch (error) {
             document.getElementById("members-error").textContent = error.message || "The roster could not be loaded.";
         }
+    }
+
+    function renderGroupMembers(members) {
+        const list = document.getElementById("members-list");
+        list.innerHTML = members.map(member => `
+            <div class="member-row member-view-row">
+                <span class="avatar">${escapeHtml(initials(member.name))}</span>
+                <span class="member-name">${escapeHtml(member.name)}${member.id.toLowerCase() === session.userId.toLowerCase() ? " <small>(you)</small>" : ""}</span>
+                <span class="member-state is-joined">Joined</span>
+            </div>`).join("") || `<p class="thread-empty">No members yet.</p>`;
     }
 
     function renderGroupRoster(groupId, roster) {
@@ -678,7 +707,10 @@
                     <button id="back-to-list" class="back-button" type="button" aria-label="Back to messages">←</button>
                     <span class="avatar group-avatar" aria-hidden="true">▦</span>
                     <div class="conversation-heading"><h2>${escapeHtml(currentGroup.groupName)}</h2><p>Group conversation${currentGroup.isAdmin ? " · Admin" : ""}</p></div>
-                    ${currentGroup.isAdmin ? `<button id="manage-group" class="manage-group-button" type="button" title="Manage group members" aria-label="Manage group members">Members</button>` : ""}
+                    <div class="group-header-actions">
+                        <button id="group-members" class="manage-group-button" type="button" title="View group members" aria-label="View group members">Members</button>
+                        ${currentGroup.isAdmin ? `<button id="manage-group" class="manage-group-button" type="button" title="Manage group members" aria-label="Manage group members">Manage</button>` : ""}
+                    </div>
                 </header>
                 <div id="message-list" class="message-list" aria-live="polite" aria-relevant="additions text"><p class="thread-loading">Loading messages…</p></div>
                 <form id="message-form" class="composer">
@@ -689,7 +721,8 @@
 
         document.getElementById("back-to-list").addEventListener("click", () => navigate("/"));
         document.getElementById("message-form").addEventListener("submit", handleSendMessage);
-        document.getElementById("manage-group")?.addEventListener("click", () => void openGroupMembers(groupId));
+        document.getElementById("group-members").addEventListener("click", () => void openGroupMembers(groupId));
+        document.getElementById("manage-group")?.addEventListener("click", () => void openGroupManagement(groupId));
 
         try {
             await ensureHubConnected();

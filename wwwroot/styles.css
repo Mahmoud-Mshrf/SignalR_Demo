@@ -986,7 +986,7 @@ button.toast {
 .manage-group-button {
     min-height: 34px;
     flex: 0 0 auto;
-    margin-left: auto;
+    margin-left: 0;
     border: 1px solid var(--line);
     border-radius: 2px;
     padding: 0 11px;
@@ -1000,6 +1000,13 @@ button.toast {
 .manage-group-button:hover {
     border-color: var(--green);
     background: var(--green-soft);
+}
+
+.group-header-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+    margin-left: auto;
 }
 
 .members-modal {
@@ -1210,6 +1217,10 @@ button.toast {
     .manage-group-button {
         padding: 0 8px;
         font-size: 10px;
+    }
+
+    .group-header-actions {
+        gap: 5px;
     }
 
     .message-list {
