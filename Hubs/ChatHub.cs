@@ -128,4 +128,6 @@ public sealed class ChatHub(
 public interface IChatClient
 {
     Task ReceiveMessage(SendMessageDto dto);
+    Task GroupAdded(Guid groupId);
+    Task GroupRemoved(Guid groupId);
 }

@@ -828,6 +828,8 @@
             .build();
 
         connection.on("ReceiveMessage", handleReceiveMessage);
+        connection.on("GroupAdded", handleGroupAdded);
+        connection.on("GroupRemoved", handleGroupRemoved);
         connection.onreconnecting(() => setConnectionStatus("reconnecting", "Reconnecting"));
         connection.onreconnected(() => {
             setConnectionStatus("connected", "Connected");
@@ -844,6 +846,35 @@
             showToast("Live connection unavailable", "Click the connection status to try again.");
         } finally {
             connectionStartPromise = null;
+        }
+    }
+
+    async function handleGroupAdded(groupId) {
+        try {
+            await refreshGroups();
+            if (connection?.state === signalR.HubConnectionState.Connected) {
+                await connection.invoke("JoinRoom", groupId);
+            }
+            const group = groups.find(item => String(item.groupId).toLowerCase() === String(groupId).toLowerCase());
+            showToast(
+                "Added to group",
+                group?.groupName || "You can now receive group messages.",
+                () => navigate(`/group/${groupId}`),
+                "Group access · Open group");
+        } catch (error) {
+            showToast("Group membership updated", error.message || "Refresh your group list to open it.");
+        }
+    }
+
+    async function handleGroupRemoved(groupId) {
+        try {
+            await refreshGroups();
+            if (String(currentGroupId).toLowerCase() === String(groupId).toLowerCase()) {
+                navigate("/");
+            }
+            showToast("Removed from group", "You no longer have access to this group.");
+        } catch (error) {
+            showToast("Group access changed", error.message || "Refresh to update your group list.");
         }
     }
 
@@ -877,7 +908,11 @@
                 appendMessage(message, { kind: "group", groupId: chatId });
             }
             if (!isMine && currentGroupId !== chatId) {
-                showToast(group.groupName, message.content || "", () => navigate(`/group/${chatId}`));
+                showToast(
+                    group.groupName,
+                    message.content || "",
+                    () => navigate(`/group/${chatId}`),
+                    "Group message · Open group");
             }
             return;
         }
@@ -936,12 +971,12 @@
         renderChatList();
     }
 
-    function showToast(title, message, onClick) {
+    function showToast(title, message, onClick, actionLabel = "New message · Open chat") {
         const toast = document.createElement(onClick ? "button" : "div");
         toast.className = "toast";
         if (onClick) toast.type = "button";
         toast.innerHTML = `
-            <span class="toast-kicker">${onClick ? "New message · Open chat" : "SignalR Demo"}</span>
+            <span class="toast-kicker">${onClick ? escapeHtml(actionLabel) : "SignalR Demo"}</span>
             <strong>${escapeHtml(title)}</strong>
             <span>${escapeHtml(message)}</span>`;
         if (onClick) toast.addEventListener("click", onClick);

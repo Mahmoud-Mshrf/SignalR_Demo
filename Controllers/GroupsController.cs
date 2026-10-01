@@ -13,7 +13,7 @@ namespace SignalR_Demo.Controllers;
 [Route("api/groups")]
 public sealed class GroupsController(
     IGroupService groupService,
-    IHubContext<ChatHub> chatHub,
+    IHubContext<ChatHub, IChatClient> chatHub,
     IHubConnectionTracker connectionTracker) : ControllerBase
 {
     [HttpGet]
@@ -137,6 +137,10 @@ public sealed class GroupsController(
                 Status = StatusCodes.Status409Conflict
             });
 
+        await chatHub.Clients
+            .User(request.NewParticipantId.ToString())
+            .GroupAdded(groupId);
+
         return CreatedAtAction(nameof(GetMembers), new { groupId }, null);
     }
 
@@ -170,6 +174,10 @@ public sealed class GroupsController(
                 ChatHub.RoomGroup(groupId),
                 cancellationToken);
         }
+
+        await chatHub.Clients
+            .User(participantId.ToString())
+            .GroupRemoved(groupId);
 
         return NoContent();
     }
