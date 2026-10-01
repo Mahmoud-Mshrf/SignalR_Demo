@@ -1,8 +1,8 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using SignalR_Demo.Dtos;
+using SignalR_Demo.Helpers;
 using SignalR_Demo.Hubs;
 using SignalR_Demo.Services;
 
@@ -21,7 +21,7 @@ public sealed class GroupsController(
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> GetGroups(CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!User.TryGetUserId(out var userId))
             return Unauthorized();
 
         var groups = await groupService.GetJoinedGroupsAsync(userId, cancellationToken);
@@ -36,7 +36,7 @@ public sealed class GroupsController(
         CreateGroupRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var creatorId))
+        if (!User.TryGetUserId(out var creatorId))
             return Unauthorized();
 
         var groupId = await groupService.CreateGroupAsync(
@@ -59,7 +59,7 @@ public sealed class GroupsController(
         Guid groupId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!User.TryGetUserId(out var userId))
             return Unauthorized();
 
         var members = await groupService.GetGroupMembersAsync(
@@ -79,7 +79,7 @@ public sealed class GroupsController(
         Guid groupId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!User.TryGetUserId(out var userId))
             return Unauthorized();
 
         var messages = await groupService.GetGroupMessagesAsync(
@@ -99,7 +99,7 @@ public sealed class GroupsController(
         Guid groupId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var userId))
+        if (!User.TryGetUserId(out var userId))
             return Unauthorized();
 
         await groupService.MarkGroupAsReadAsync(userId, groupId, cancellationToken);
@@ -115,7 +115,7 @@ public sealed class GroupsController(
         Guid groupId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var managerId))
+        if (!User.TryGetUserId(out var managerId))
             return Unauthorized();
 
         var users = await groupService.GetAllUsersWithMembershipAsync(
@@ -137,7 +137,7 @@ public sealed class GroupsController(
         AddGroupParticipantRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var managerId))
+        if (!User.TryGetUserId(out var managerId))
             return Unauthorized();
 
         var added = await groupService.AddParticipantAsync(
@@ -171,7 +171,7 @@ public sealed class GroupsController(
         Guid participantId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetCurrentUserId(out var managerId))
+        if (!User.TryGetUserId(out var managerId))
             return Unauthorized();
 
         var removed = await groupService.RemoveParticipantAsync(
@@ -198,8 +198,4 @@ public sealed class GroupsController(
         return NoContent();
     }
 
-    private bool TryGetCurrentUserId(out Guid userId)
-    {
-        return Guid.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out userId);
-    }
 }

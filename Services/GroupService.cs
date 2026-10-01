@@ -45,7 +45,11 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         return group.Id;
     }
 
-    public async Task<SendMessageDto> AddGroupMessageAsync(Guid groupId, string content, Guid userId)
+    public async Task<SendMessageDto> AddGroupMessageAsync(
+        Guid groupId,
+        string content,
+        Guid userId,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(content))
             throw new ArgumentException("Message content is required.", nameof(content));
@@ -57,7 +61,8 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         await GetRequiredGroupParticipantAsync(
             userId,
             groupId,
-            "Only group members can send messages.");
+            "Only group members can send messages.",
+            cancellationToken);
 
         var message = new GroupMessage
         {
@@ -69,7 +74,7 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         };
 
         context.GroupMessages.Add(message);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
 
         return new SendMessageDto(groupId,message.SenderId,message.Content,message.SentAt);
     }
@@ -196,12 +201,14 @@ public sealed class GroupService(AppDbContext context) : IGroupService
             .ToListAsync(cancellationToken);
     }
 
-    public Task<List<Guid>> GetJoinedGroupIdsAsync(Guid userId)
+    public Task<List<Guid>> GetJoinedGroupIdsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
     {
         return context.GroupParticipants
             .Where(participant => participant.UserId == userId)
             .Select(participant => participant.GroupId)
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
     public Task<bool> IsGroupMemberAsync(
@@ -289,47 +296,4 @@ public sealed class GroupService(AppDbContext context) : IGroupService
 
         throw new UnauthorizedAccessException(unauthorizedMessage);
     }
-}
-
-public interface IGroupService
-{
-    Task<Guid> CreateGroupAsync(
-        string groupName,
-        Guid creatorId,
-        CancellationToken cancellationToken = default);
-    Task<SendMessageDto> AddGroupMessageAsync(Guid groupId, string content, Guid userId);
-    Task<List<SendMessageDto>> GetGroupMessagesAsync(
-        Guid groupId,
-        Guid userId,
-        CancellationToken cancellationToken = default);
-    Task<List<GroupSummaryDto>> GetJoinedGroupsAsync(
-        Guid userId,
-        CancellationToken cancellationToken = default);
-    Task MarkGroupAsReadAsync(
-        Guid userId,
-        Guid groupId,
-        CancellationToken cancellationToken = default);
-    Task<bool> AddParticipantAsync(
-        Guid managerId,
-        Guid newParticipantId,
-        Guid groupId,
-        CancellationToken cancellationToken = default);
-    Task<bool> RemoveParticipantAsync(
-        Guid managerId,
-        Guid participantId,
-        Guid groupId,
-        CancellationToken cancellationToken = default);
-    Task<List<GroupUserDto>> GetGroupMembersAsync(
-        Guid currentUserId,
-        Guid groupId,
-        CancellationToken cancellationToken = default);
-    Task<List<Guid>> GetJoinedGroupIdsAsync(Guid userId);
-    Task<bool> IsGroupMemberAsync(
-        Guid userId,
-        Guid groupId,
-        CancellationToken cancellationToken = default);
-    Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(
-        Guid managerId,
-        Guid groupId,
-        CancellationToken cancellationToken = default);
 }

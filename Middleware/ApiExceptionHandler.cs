@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace SignalR_Demo.Middleware;
 
-internal sealed class GroupApiExceptionHandler(ILogger<GroupApiExceptionHandler> logger)
+internal sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger)
     : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(

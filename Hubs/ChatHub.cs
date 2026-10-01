@@ -20,11 +20,11 @@ public sealed class ChatHub(
         connectionTracker.Track(userId, Context.ConnectionId);
         try
         {
-            var userGroups = await groupService.GetJoinedGroupIdsAsync(userId);
+            var userGroups = await groupService.GetJoinedGroupIdsAsync(userId, Context.ConnectionAborted);
             foreach (var groupId in userGroups)
             {
                 var roomName = RoomGroup(groupId);
-                await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
+                await Groups.AddToGroupAsync(Context.ConnectionId, roomName, Context.ConnectionAborted);
 
                 if (!await groupService.IsGroupMemberAsync(userId, groupId, Context.ConnectionAborted))
                     await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName);
@@ -67,7 +67,8 @@ public sealed class ChatHub(
 
         var chatId = await chatService.GetOrCreateChatAsync(
             senderId,
-            receiverId);
+            receiverId,
+            Context.ConnectionAborted);
 
         var newId = Guid.NewGuid();
 
@@ -84,7 +85,7 @@ public sealed class ChatHub(
 
         Console.WriteLine($"Message ID after creation: {message.Id}");
 
-        await chatService.AddMessageAsync(message);
+        await chatService.AddMessageAsync(message, Context.ConnectionAborted);
 
         var dto = new SendMessageDto(
             message.ChatId,
@@ -102,7 +103,11 @@ public sealed class ChatHub(
         if (!Guid.TryParse(Context.UserIdentifier, out var userId))
             throw new HubException("Invalid user identity.");
 
-        var message =await groupService.AddGroupMessageAsync(groupId,content,userId);
+        var message = await groupService.AddGroupMessageAsync(
+            groupId,
+            content,
+            userId,
+            Context.ConnectionAborted);
         await Clients.Group(RoomGroup(groupId)).ReceiveMessage(message);
     }
     public async Task JoinRoom(Guid groupId)

@@ -1,5 +1,4 @@
 using System.Text;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -15,18 +14,18 @@ var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSetting
     ?? throw new InvalidOperationException("JwtSettings configuration is required.");
 
 builder.Services.AddControllers();
-builder.Services.AddExceptionHandler<GroupApiExceptionHandler>();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization();
 builder.Services.AddSignalR();
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddCors(c=>c.AddPolicy("Frontend",p=>p
-    .WithOrigins("http://localhost:5000")// frontend address 
+builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy
+    .WithOrigins("http://localhost:5000")
     .AllowAnyHeader()
     .AllowAnyMethod()
-    .AllowCredentials())); // SignalR requires this
+    .AllowCredentials()));
 
 builder.Services.AddAuthentication(options =>
     {
@@ -45,26 +44,23 @@ builder.Services.AddAuthentication(options =>
             ValidAudience = jwtSettings.Audience,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.SigningKey))
         };
-        options.Events= new JwtBearerEvents
+        options.Events = new JwtBearerEvents
         {
             OnMessageReceived = context =>
             {
                 var token = context.Request.Query["access_token"];
 
-                var path = context.Request.Path;
-
-                if (!string.IsNullOrEmpty(token) && path.StartsWithSegments("/hubs"))
-                {
+                if (!string.IsNullOrEmpty(token) && context.Request.Path.StartsWithSegments("/hubs"))
                     context.Token = token;
-                } 
+
                 return Task.CompletedTask;
             }
-        };// 'Without this block, the hub answers 401 (unauthorized) even though your API calls work fine. It is the most common authentication problem with SignalR.'
+        };
     });
 builder.Services.AddScoped<ITokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddSingleton<IUserIdProvider,UserIdProvider>();
+builder.Services.AddSingleton<IUserIdProvider, UserIdProvider>();
 builder.Services.AddSingleton<IHubConnectionTracker, HubConnectionTracker>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IGroupService, GroupService>();

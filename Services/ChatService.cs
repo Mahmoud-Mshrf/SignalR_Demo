@@ -10,9 +10,12 @@ namespace SignalR_Demo.Services;
 public sealed class ChatService(AppDbContext context)
     : IChatService
 {
+    private const int MaximumPageSize = 100;
+
     public async Task<Guid> GetOrCreateChatAsync(
         Guid currentUserId,
-        Guid otherUserId)
+        Guid otherUserId,
+        CancellationToken cancellationToken = default)
     {
         var firstId = currentUserId.CompareTo(otherUserId) < 0
             ? currentUserId
@@ -25,7 +28,7 @@ public sealed class ChatService(AppDbContext context)
         var pairKey = $"{firstId}_{secondId}";
 
         var existingChat = await context.Chats
-            .FirstOrDefaultAsync(x => x.UserPairKey == pairKey);
+            .FirstOrDefaultAsync(chat => chat.UserPairKey == pairKey, cancellationToken);
 
         if (existingChat is not null)
             return existingChat.Id;
@@ -50,69 +53,92 @@ public sealed class ChatService(AppDbContext context)
 
         context.Chats.Add(chat);
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
 
         return chat.Id;
     }
 
-    public async Task AddMessageAsync(Message message)
+    public async Task AddMessageAsync(Message message, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"Message ID: {message.Id}");
-        Console.WriteLine($"Chat ID: {message.ChatId}");
-        Console.WriteLine($"Sender ID: {message.SenderId}");
-
         context.Messages.Add(message);
-
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<bool> MarkChatAsReadAsync(Guid chatId, Guid currentUserId)
+    public async Task<bool> MarkChatAsReadAsync(
+        Guid chatId,
+        Guid currentUserId,
+        CancellationToken cancellationToken = default)
     {
         var participant = await context.ChatParticipants
-            .FirstOrDefaultAsync(x =>
-                x.ChatId == chatId &&
-                x.UserId == currentUserId);
+            .FirstOrDefaultAsync(participant =>
+                participant.ChatId == chatId && participant.UserId == currentUserId,
+                cancellationToken);
 
         if (participant is null)
             return false;
 
         participant.LastReadAt = DateTime.UtcNow;
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
 
         return true;
     }
 
-    public async Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size)
+    public async Task<PaginatedList<ChatDto>> GetChatsAsync(
+        Guid userId,
+        int page,
+        int size,
+        CancellationToken cancellationToken = default)
     {
+        ValidatePagination(page, size);
+
         var chats = await context.Chats
-            .Where(chat => chat.Participants.Any(participant => participant.UserId == UserId))
+            .Where(chat => chat.Participants.Any(participant => participant.UserId == userId))
+            .Where(chat => chat.Messages.Any())
             .OrderByDescending(chat => chat.Messages.Max(message => message.SentAt))
             .Skip((page - 1) * size)
             .Take(size)
             .Select(chat => new
             {
                 ChatId = chat.Id,
-                Receiver = chat.Participants.First(participant => participant.UserId != UserId),
-                LastMessage = chat.Messages.OrderByDescending(message => message.SentAt).First(),
+                Receiver = chat.Participants
+                    .Where(participant => participant.UserId != userId)
+                    .Select(participant => new
+                    {
+                        participant.UserId,
+                        participant.User.Name
+                    })
+                    .First(),
+                LastMessage = chat.Messages
+                    .OrderByDescending(message => message.SentAt)
+                    .Select(message => new
+                    {
+                        message.Content,
+                        message.SentAt,
+                        message.SenderId
+                    })
+                    .First(),
                 UnreadMessages = chat.Messages.Count(message =>
-                    message.SenderId != UserId &&
+                    message.SenderId != userId &&
                     message.SentAt > chat.Participants
-                        .First(participant => participant.UserId == UserId)
+                        .First(participant => participant.UserId == userId)
                         .LastReadAt)
             })
             .Select(chat => new ChatDto(
                 chat.ChatId,
                 chat.Receiver.UserId,
-                chat.Receiver.User.Name,
+                chat.Receiver.Name,
                 chat.LastMessage.Content,
                 chat.LastMessage.SentAt,
-                chat.LastMessage.SenderId == UserId,
+                chat.LastMessage.SenderId == userId,
                 chat.UnreadMessages))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         var itemsCount = await context.Chats
-            .CountAsync(chat => chat.Participants.Any(participant => participant.UserId == UserId));
+            .CountAsync(chat =>
+                chat.Participants.Any(participant => participant.UserId == userId) &&
+                chat.Messages.Any(),
+                cancellationToken);
 
         return new PaginatedList<ChatDto>
         {
@@ -124,48 +150,51 @@ public sealed class ChatService(AppDbContext context)
         };
     }
 
-    public async Task<PaginatedList<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size)
+    public async Task<PaginatedList<MessageDto>> GetMessagesAsync(
+        Guid userId,
+        Guid chatId,
+        int page,
+        int size,
+        CancellationToken cancellationToken = default)
     {
-        var chat =await context.Chats.Include(x=>x.Participants).FirstOrDefaultAsync(c=>c.Id==ChatId);
-        if (chat is null)
-        {
-            throw new ArgumentNullException();
-        }
-        if (!chat.Participants.Any(x=>x.UserId==userId))
-        {
-            throw new UnauthorizedAccessException();
-        }
+        ValidatePagination(page, size);
 
+        if (!await context.Chats.AnyAsync(chat => chat.Id == chatId, cancellationToken))
+            throw new KeyNotFoundException("Chat was not found.");
+
+        var isParticipant = await context.ChatParticipants.AnyAsync(participant =>
+            participant.ChatId == chatId && participant.UserId == userId,
+            cancellationToken);
+
+        if (!isParticipant)
+            throw new UnauthorizedAccessException("Only chat participants can view messages.");
+
+        var messageQuery = context.Messages.Where(message => message.ChatId == chatId);
+        var totalCount = await messageQuery.CountAsync(cancellationToken);
         var messages = await context.Messages
-            .Where(message => message.ChatId == ChatId)
+            .Where(message => message.ChatId == chatId)
             .OrderBy(message => message.SentAt)
             .Skip((page - 1) * size)
             .Take(size)
-            .ToListAsync();
-        var msgs= new List<MessageDto>();
-        foreach (var msg in messages)
-        {
-            msgs.Add(new MessageDto(msg.SenderId,msg.Content,msg.SentAt));
-        }
-        var itemsCount = context.Messages.Where(x=>x.ChatId==ChatId).Count();
+            .Select(message => new MessageDto(message.SenderId, message.Content, message.SentAt))
+            .ToListAsync(cancellationToken);
+
         return new PaginatedList<MessageDto>
         {
-            Items=msgs,
-            Page=page,
-            PageSize=size,
-            TotalCount=itemsCount,
-            HasNextPage= (((page-1)*size) + msgs.Count ) < itemsCount
+            Items = messages,
+            Page = page,
+            PageSize = size,
+            TotalCount = totalCount,
+            HasNextPage = ((page - 1) * size) + messages.Count < totalCount
         };
     }
-}
-public interface IChatService
-{
-    Task<Guid> GetOrCreateChatAsync(
-        Guid currentUserId,
-        Guid otherUserId);
 
-    Task AddMessageAsync(Message message);
-    Task<bool> MarkChatAsReadAsync(Guid chatId, Guid currentUserId);
-    Task<PaginatedList<ChatDto>> GetChatsAsync(Guid UserId,int page,int size);
-    Task<PaginatedList<MessageDto>> GetMessagesAsync(Guid userId, Guid ChatId,int page,int size);
+    private static void ValidatePagination(int page, int size)
+    {
+        if (page < 1)
+            throw new ArgumentOutOfRangeException(nameof(page), "Page must be greater than zero.");
+
+        if (size is < 1 or > MaximumPageSize)
+            throw new ArgumentOutOfRangeException(nameof(size), $"Page size must be between 1 and {MaximumPageSize}.");
+    }
 }
