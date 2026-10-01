@@ -17,3 +17,10 @@ public sealed record AddGroupParticipantRequest
 
 /// <summary>Identifier of a newly created group.</summary>
 public sealed record GroupCreatedResponse(Guid GroupId);
+
+/// <summary>A group the signed-in user has joined.</summary>
+public sealed record GroupSummaryDto(
+    Guid GroupId,
+    string GroupName,
+    bool IsAdmin,
+    DateTimeOffset CreatedAt);

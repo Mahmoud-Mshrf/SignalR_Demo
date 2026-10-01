@@ -903,6 +903,179 @@ button.toast {
     line-height: 1.5;
 }
 
+.auth-mode-toggle {
+    display: block;
+    margin: 18px auto 0;
+    border: 0;
+    padding: 8px;
+    color: var(--green);
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.auth-mode-toggle:hover {
+    color: var(--coral);
+}
+
+.sidebar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.group-create-button {
+    color: var(--green-deep);
+    background: #dce8df;
+    font-size: 18px;
+}
+
+.group-create-button:hover {
+    background: #c9dccf;
+}
+
+.conversation-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    margin: 0 15px 14px;
+    border-bottom: 1px solid var(--line);
+}
+
+.conversation-tab {
+    position: relative;
+    min-height: 38px;
+    border: 0;
+    padding: 0 8px 10px;
+    color: var(--muted);
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.conversation-tab.is-active {
+    color: var(--green-deep);
+}
+
+.conversation-tab.is-active::after {
+    position: absolute;
+    right: 8px;
+    bottom: -1px;
+    left: 8px;
+    height: 2px;
+    background: var(--green);
+    content: "";
+}
+
+.chat-item .group-avatar,
+.group-avatar {
+    color: var(--green-deep);
+    background: #dce8df;
+    font-size: 16px;
+}
+
+.role-mark {
+    flex: 0 0 auto;
+    color: var(--coral);
+    font-family: "DM Mono", monospace;
+    font-size: 8px;
+    font-weight: 500;
+}
+
+.manage-group-button {
+    min-height: 34px;
+    flex: 0 0 auto;
+    margin-left: auto;
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 0 11px;
+    color: var(--green);
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.manage-group-button:hover {
+    border-color: var(--green);
+    background: var(--green-soft);
+}
+
+.members-modal {
+    width: min(540px, calc(100vw - 28px));
+}
+
+.members-list {
+    display: grid;
+    max-height: min(56vh, 480px);
+    overflow-y: auto;
+}
+
+.member-row {
+    display: grid;
+    min-height: 57px;
+    grid-template-columns: 36px minmax(0, 1fr) auto 34px;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid var(--line);
+}
+
+.member-row .avatar {
+    width: 32px;
+    height: 32px;
+}
+
+.member-name {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.member-name small {
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.member-state {
+    color: var(--muted);
+    font-size: 10px;
+}
+
+.member-state.is-joined {
+    color: var(--green);
+}
+
+.member-action {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border: 1px solid #ebcfc6;
+    border-radius: 2px;
+    color: #a23e30;
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 18px;
+}
+
+.member-action.is-add {
+    border-color: #c5d9c7;
+    color: var(--green);
+}
+
+.member-action:hover {
+    background: var(--coral-soft);
+}
+
+.member-action.is-add:hover {
+    background: var(--green-soft);
+}
+
 @keyframes page-in {
     from { opacity: 0; transform: translateY(5px); }
     to { opacity: 1; transform: translateY(0); }
@@ -1029,6 +1202,16 @@ button.toast {
         padding: 10px 13px;
     }
 
+    .conversation-header {
+        gap: 8px;
+        padding: 10px 9px;
+    }
+
+    .manage-group-button {
+        padding: 0 8px;
+        font-size: 10px;
+    }
+
     .message-list {
         padding: 18px 13px;
     }
@@ -1056,6 +1239,15 @@ button.toast {
     .toast-region {
         right: 14px;
         bottom: 14px;
+    }
+
+    .member-row {
+        grid-template-columns: 32px minmax(0, 1fr) auto 32px;
+        gap: 7px;
+    }
+
+    .member-state {
+        font-size: 9px;
     }
 }
 

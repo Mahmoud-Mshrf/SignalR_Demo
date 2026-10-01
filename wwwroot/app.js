@@ -9,14 +9,20 @@
 
     let session = readSession();
     let connection = null;
+    let connectionStartPromise = null;
     let chats = [];
+    let groups = [];
+    let activeList = "direct";
     let currentChatId = null;
+    let currentGroupId = null;
     let historyReadyChatId = null;
     let pendingMessages = new Map();
     let renderedMessageKeys = new Set();
+    let groupMemberNames = new Map();
     let chatRefreshVersion = 0;
     let conversationVersion = 0;
     let pendingNewConversation = null;
+    let authMode = "login";
 
     function readSession() {
         try {
@@ -66,9 +72,9 @@
     }
 
     function parseRoute() {
-        const match = window.location.pathname.match(/^\/chat\/([^/]+)\/?$/i);
-        if (!match || !guidPattern.test(match[1])) return null;
-        return { chatId: match[1].toLowerCase() };
+        const match = window.location.pathname.match(/^\/(chat|group)\/([^/]+)\/?$/i);
+        if (!match || !guidPattern.test(match[2])) return null;
+        return { type: match[1].toLowerCase(), id: match[2].toLowerCase() };
     }
 
     function navigate(path) {
@@ -108,6 +114,7 @@
     }
 
     function renderLogin(errorMessage = "") {
+        const registering = authMode === "register";
         app.innerHTML = `
             <main class="login-page">
                 <aside class="login-aside">
@@ -121,10 +128,19 @@
                 </aside>
                 <section class="login-main">
                     <div class="login-form-wrap">
-                        <p class="section-kicker">WELCOME BACK</p>
-                        <h2>Sign in</h2>
-                        <p class="login-subtitle">Use your SignalR Demo account.</p>
+                        <p class="section-kicker">${registering ? "NEW ACCOUNT" : "WELCOME BACK"}</p>
+                        <h2>${registering ? "Create your account" : "Sign in"}</h2>
+                        <p class="login-subtitle">${registering ? "Join your conversations in one place." : "Use your SignalR Demo account."}</p>
                         <form id="login-form" class="login-form">
+                            ${registering ? `
+                            <div class="field">
+                                <label for="name">Name</label>
+                                <input id="name" name="name" autocomplete="name" required maxlength="100" placeholder="Your name">
+                            </div>
+                            <div class="field">
+                                <label for="phone">Phone number</label>
+                                <input id="phone" name="phoneNumber" type="tel" autocomplete="tel" required maxlength="32" placeholder="+1 555 123 4567">
+                            </div>` : ""}
                             <div class="field">
                                 <label for="email">Email</label>
                                 <input id="email" name="email" type="email" autocomplete="username" required maxlength="320" placeholder="you@example.com">
@@ -134,16 +150,21 @@
                                 <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" placeholder="Your password">
                             </div>
                             <p id="auth-error" class="auth-error" role="alert">${escapeHtml(errorMessage)}</p>
-                            <button id="login-button" class="primary-button" type="submit">Sign in <span aria-hidden="true">→</span></button>
+                            <button id="login-button" class="primary-button" type="submit">${registering ? "Create account" : "Sign in"} <span aria-hidden="true">→</span></button>
                         </form>
+                        <button id="auth-mode-toggle" class="auth-mode-toggle" type="button">${registering ? "Already have an account? Sign in" : "New here? Create an account"}</button>
                     </div>
                 </section>
             </main>`;
 
-        document.getElementById("login-form").addEventListener("submit", handleLogin);
+        document.getElementById("login-form").addEventListener("submit", handleAuthentication);
+        document.getElementById("auth-mode-toggle").addEventListener("click", () => {
+            authMode = registering ? "login" : "register";
+            renderLogin();
+        });
     }
 
-    async function handleLogin(event) {
+    async function handleAuthentication(event) {
         event.preventDefault();
         const form = event.currentTarget;
         const button = document.getElementById("login-button");
@@ -152,9 +173,15 @@
         error.textContent = "";
 
         try {
-            const response = await apiRequest("/api/auth/login", {
+            const registering = authMode === "register";
+            const response = await apiRequest(registering ? "/api/auth/register" : "/api/auth/login", {
                 method: "POST",
-                body: JSON.stringify({
+                body: JSON.stringify(registering ? {
+                    name: form.elements.name.value.trim(),
+                    email: form.elements.email.value.trim(),
+                    phoneNumber: form.elements.phoneNumber.value.trim(),
+                    password: form.elements.password.value
+                } : {
                     email: form.elements.email.value.trim(),
                     password: form.elements.password.value
                 })
@@ -167,6 +194,7 @@
             };
             sessionStorage.setItem(sessionKey, JSON.stringify(session));
             chats = [];
+            groups = [];
             await enterApplication();
         } catch (requestError) {
             error.textContent = requestError.message || "Sign in failed. Check your details and try again.";
@@ -191,11 +219,10 @@
     async function enterApplication() {
         renderShell();
         void connectHub();
-        try {
-            await refreshChats();
-        } catch (error) {
-            showToast("Chats could not be loaded", error.message);
-        }
+        await Promise.all([
+            refreshChats().catch(error => showToast("Chats could not be loaded", error.message)),
+            refreshGroups().catch(error => showToast("Groups could not be loaded", error.message))
+        ]);
         await renderRoute();
     }
 
@@ -217,13 +244,20 @@
                     <aside class="sidebar">
                         <div class="sidebar-heading">
                             <div><p class="section-kicker">YOUR SPACE</p><h1>Messages</h1></div>
-                            <button id="open-new-chat" class="new-chat-button" type="button" title="Start a conversation" aria-label="Start a conversation">+</button>
+                            <div class="sidebar-actions">
+                                <button id="open-create-group" class="new-chat-button group-create-button" type="button" title="Create a group" aria-label="Create a group">▦</button>
+                                <button id="open-new-chat" class="new-chat-button" type="button" title="Start a direct conversation" aria-label="Start a direct conversation">+</button>
+                            </div>
                         </div>
                         <div class="profile-strip">
                             <span class="avatar">${escapeHtml(initials(session.name))}</span>
                             <div class="profile-copy"><strong>${escapeHtml(session.name)}</strong><span>${escapeHtml(session.email)}</span></div>
                         </div>
-                        <div class="list-label"><span>CONVERSATIONS</span><span id="chat-count">0</span></div>
+                        <div class="conversation-tabs" role="tablist" aria-label="Conversation type">
+                            <button class="conversation-tab is-active" type="button" role="tab" aria-selected="true" data-list="direct">Direct</button>
+                            <button class="conversation-tab" type="button" role="tab" aria-selected="false" data-list="groups">Groups</button>
+                        </div>
+                        <div class="list-label"><span id="list-label-text">DIRECT MESSAGES</span><span id="chat-count">0</span></div>
                         <nav id="chat-list" class="chat-list" aria-label="Conversations"></nav>
                     </aside>
                     <main id="conversation" class="conversation"></main>
@@ -249,6 +283,32 @@
                 </form>
             </dialog>`;
 
+        app.insertAdjacentHTML("beforeend", `
+            <dialog id="create-group-dialog" class="modal">
+                <form id="create-group-form" class="modal-content">
+                    <div class="modal-heading">
+                        <div><p class="section-kicker">NEW GROUP</p><h2>Create a group</h2></div>
+                        <button class="dialog-close" type="button" data-close-dialog="create-group-dialog" aria-label="Close">×</button>
+                    </div>
+                    <div class="field">
+                        <label for="group-name">Group name</label>
+                        <input id="group-name" name="groupName" required maxlength="100" placeholder="Project team">
+                    </div>
+                    <p id="create-group-error" class="form-error" role="alert"></p>
+                    <button id="create-group-submit" class="primary-button" type="submit">Create group <span aria-hidden="true">→</span></button>
+                </form>
+            </dialog>
+            <dialog id="members-dialog" class="modal members-modal">
+                <section class="modal-content">
+                    <div class="modal-heading">
+                        <div><p class="section-kicker">GROUP ROSTER</p><h2 id="members-title">Members</h2></div>
+                        <button class="dialog-close" type="button" data-close-dialog="members-dialog" aria-label="Close">×</button>
+                    </div>
+                    <div id="members-list" class="members-list"></div>
+                    <p id="members-error" class="form-error" role="alert"></p>
+                </section>
+            </dialog>`);
+
         document.querySelectorAll("[data-home]").forEach(link => {
             link.addEventListener("click", event => {
                 event.preventDefault();
@@ -267,6 +327,26 @@
             document.getElementById("new-chat-dialog").close();
         });
         document.getElementById("new-chat-form").addEventListener("submit", handleStartConversation);
+        document.getElementById("open-create-group").addEventListener("click", () => {
+            document.getElementById("create-group-error").textContent = "";
+            document.getElementById("create-group-dialog").showModal();
+            document.getElementById("group-name").focus();
+        });
+        document.getElementById("create-group-form").addEventListener("submit", handleCreateGroup);
+        document.querySelectorAll("[data-close-dialog]").forEach(button => {
+            button.addEventListener("click", () => document.getElementById(button.dataset.closeDialog).close());
+        });
+        document.querySelectorAll("[data-list]").forEach(button => {
+            button.addEventListener("click", () => {
+                activeList = button.dataset.list;
+                document.querySelectorAll("[data-list]").forEach(tab => {
+                    const selected = tab === button;
+                    tab.classList.toggle("is-active", selected);
+                    tab.setAttribute("aria-selected", String(selected));
+                });
+                renderChatList();
+            });
+        });
     }
 
     async function copyUserId() {
@@ -334,10 +414,64 @@
         renderChatList();
     }
 
+    async function refreshGroups() {
+        groups = await apiRequest("/api/groups");
+        if (activeList === "groups") renderChatList();
+    }
+
+    async function handleCreateGroup(event) {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const button = document.getElementById("create-group-submit");
+        const error = document.getElementById("create-group-error");
+        error.textContent = "";
+        button.disabled = true;
+
+        try {
+            const result = await apiRequest("/api/groups", {
+                method: "POST",
+                body: JSON.stringify({ groupName: form.elements.groupName.value.trim() })
+            });
+            await refreshGroups();
+            document.getElementById("create-group-dialog").close();
+            form.reset();
+            activeList = "groups";
+            document.querySelector('[data-list="groups"]').click();
+            await ensureHubConnected();
+            await connection.invoke("JoinRoom", result.groupId);
+            navigate(`/group/${result.groupId}`);
+        } catch (createError) {
+            error.textContent = createError.message || "The group could not be created.";
+        } finally {
+            if (button.isConnected) button.disabled = false;
+        }
+    }
+
     function renderChatList() {
         const list = document.getElementById("chat-list");
         if (!list) return;
         const count = document.getElementById("chat-count");
+        if (activeList === "groups") {
+            document.getElementById("list-label-text").textContent = "YOUR GROUPS";
+            count.textContent = String(groups.length);
+            if (!groups.length) {
+                list.innerHTML = `<div class="chat-list-empty">Groups you join will appear here.</div>`;
+                return;
+            }
+            list.innerHTML = groups.map(group => `
+                <button class="chat-item${String(group.groupId).toLowerCase() === currentGroupId ? " is-active" : ""}" type="button" data-group-id="${escapeHtml(group.groupId)}">
+                    <span class="avatar group-avatar" aria-hidden="true">▦</span>
+                    <span class="chat-copy">
+                        <span class="chat-line"><span class="chat-name">${escapeHtml(group.groupName)}</span>${group.isAdmin ? `<span class="role-mark" title="You manage this group">ADMIN</span>` : ""}</span>
+                        <span class="chat-preview">${group.isAdmin ? "Managed by you" : "Group conversation"}</span>
+                    </span>
+                </button>`).join("");
+            list.querySelectorAll("[data-group-id]").forEach(button => {
+                button.addEventListener("click", () => navigate(`/group/${button.dataset.groupId}`));
+            });
+            return;
+        }
+        document.getElementById("list-label-text").textContent = "DIRECT MESSAGES";
         if (count) count.textContent = String(chats.length);
         if (!chats.length) {
             list.innerHTML = `<div class="chat-list-empty">Your conversations will appear here.</div>`;
@@ -364,6 +498,63 @@
         });
     }
 
+    async function openGroupMembers(groupId) {
+        const group = groups.find(item => String(item.groupId).toLowerCase() === groupId.toLowerCase());
+        if (!group?.isAdmin) return;
+        const dialog = document.getElementById("members-dialog");
+        document.getElementById("members-title").textContent = group.groupName;
+        document.getElementById("members-list").innerHTML = `<p class="thread-loading">Loading roster…</p>`;
+        document.getElementById("members-error").textContent = "";
+        dialog.showModal();
+
+        try {
+            const roster = await apiRequest(`/api/groups/${encodeURIComponent(groupId)}/users`);
+            renderGroupRoster(groupId, roster);
+        } catch (error) {
+            document.getElementById("members-error").textContent = error.message || "The roster could not be loaded.";
+        }
+    }
+
+    function renderGroupRoster(groupId, roster) {
+        const list = document.getElementById("members-list");
+        list.innerHTML = roster.map(user => `
+            <div class="member-row">
+                <span class="avatar">${escapeHtml(initials(user.name))}</span>
+                <span class="member-name">${escapeHtml(user.name)}${user.id.toLowerCase() === session.userId.toLowerCase() ? " <small>(you)</small>" : ""}</span>
+                <span class="member-state${user.isJoined ? " is-joined" : ""}">${user.isJoined ? "Joined" : "Not joined"}</span>
+                ${user.isJoined
+                    ? (user.id.toLowerCase() !== session.userId.toLowerCase() ? `<button class="member-action" type="button" data-remove-user="${escapeHtml(user.id)}" title="Remove ${escapeHtml(user.name)}" aria-label="Remove ${escapeHtml(user.name)}">−</button>` : `<span class="role-mark">ADMIN</span>`)
+                    : `<button class="member-action is-add" type="button" data-add-user="${escapeHtml(user.id)}" title="Add ${escapeHtml(user.name)}" aria-label="Add ${escapeHtml(user.name)}">+</button>`}
+            </div>`).join("") || `<p class="thread-empty">No users are available.</p>`;
+
+        list.querySelectorAll("[data-add-user]").forEach(button => {
+            button.addEventListener("click", () => void changeGroupMember(groupId, button.dataset.addUser, true));
+        });
+        list.querySelectorAll("[data-remove-user]").forEach(button => {
+            button.addEventListener("click", () => void changeGroupMember(groupId, button.dataset.removeUser, false));
+        });
+    }
+
+    async function changeGroupMember(groupId, userId, adding) {
+        const error = document.getElementById("members-error");
+        error.textContent = "";
+        try {
+            await apiRequest(adding
+                ? `/api/groups/${encodeURIComponent(groupId)}/members`
+                : `/api/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`, {
+                method: adding ? "POST" : "DELETE",
+                ...(adding ? { body: JSON.stringify({ newParticipantId: userId }) } : {})
+            });
+            const [roster] = await Promise.all([
+                apiRequest(`/api/groups/${encodeURIComponent(groupId)}/users`),
+                refreshGroups()
+            ]);
+            renderGroupRoster(groupId, roster);
+        } catch (changeError) {
+            error.textContent = changeError.message || "The membership could not be updated.";
+        }
+    }
+
     async function renderRoute() {
         if (!session) {
             renderLogin();
@@ -372,13 +563,18 @@
         const route = parseRoute();
         if (!route) {
             currentChatId = null;
+            currentGroupId = null;
             historyReadyChatId = null;
             document.getElementById("workspace")?.classList.remove("is-chat-open");
             renderChatList();
             renderWelcome();
             return;
         }
-        await openConversation(route.chatId);
+        if (route.type === "group") {
+            await openGroup(route.id);
+            return;
+        }
+        await openConversation(route.id);
     }
 
     function renderWelcome() {
@@ -395,6 +591,7 @@
     async function openConversation(chatId) {
         const version = ++conversationVersion;
         currentChatId = chatId;
+        currentGroupId = null;
         historyReadyChatId = null;
         document.getElementById("workspace")?.classList.add("is-chat-open");
         renderChatList();
@@ -439,7 +636,73 @@
     }
 
     function findChat(chatId) {
+        if (!chatId) return undefined;
         return chats.find(chat => String(chat.chatId).toLowerCase() === chatId.toLowerCase());
+    }
+
+    async function openGroup(groupId) {
+        const group = groups.find(item => String(item.groupId).toLowerCase() === groupId.toLowerCase());
+        if (!group) {
+            try {
+                await refreshGroups();
+            } catch (error) {
+                showToast("Groups could not be loaded", error.message);
+                return;
+            }
+        }
+        const currentGroup = groups.find(item => String(item.groupId).toLowerCase() === groupId.toLowerCase());
+        if (!currentGroup) {
+            navigate("/");
+            showToast("Group unavailable", "This group is not in your membership list.");
+            return;
+        }
+
+        const version = ++conversationVersion;
+        currentChatId = null;
+        currentGroupId = groupId;
+        historyReadyChatId = null;
+        document.getElementById("workspace")?.classList.add("is-chat-open");
+        activeList = "groups";
+        document.querySelector('[data-list="groups"]')?.click();
+        renderChatList();
+
+        const pane = document.getElementById("conversation");
+        pane.innerHTML = `
+            <section class="conversation-view">
+                <header class="conversation-header">
+                    <button id="back-to-list" class="back-button" type="button" aria-label="Back to messages">←</button>
+                    <span class="avatar group-avatar" aria-hidden="true">▦</span>
+                    <div class="conversation-heading"><h2>${escapeHtml(currentGroup.groupName)}</h2><p>Group conversation${currentGroup.isAdmin ? " · Admin" : ""}</p></div>
+                    ${currentGroup.isAdmin ? `<button id="manage-group" class="manage-group-button" type="button" title="Manage group members" aria-label="Manage group members">Members</button>` : ""}
+                </header>
+                <div id="message-list" class="message-list" aria-live="polite" aria-relevant="additions text"><p class="thread-loading">Loading messages…</p></div>
+                <form id="message-form" class="composer">
+                    <textarea id="message-input" name="content" rows="1" maxlength="4000" required aria-label="Type a group message" placeholder="Message ${escapeHtml(currentGroup.groupName)}…" disabled></textarea>
+                    <button class="primary-button" type="submit" disabled>Send <span class="send-arrow" aria-hidden="true">↗</span></button>
+                </form>
+            </section>`;
+
+        document.getElementById("back-to-list").addEventListener("click", () => navigate("/"));
+        document.getElementById("message-form").addEventListener("submit", handleSendMessage);
+        document.getElementById("manage-group")?.addEventListener("click", () => void openGroupMembers(groupId));
+
+        try {
+            await ensureHubConnected();
+            await connection.invoke("JoinRoom", groupId);
+            const [history, members] = await Promise.all([
+                loadGroupHistory(groupId),
+                apiRequest(`/api/groups/${encodeURIComponent(groupId)}/members`)
+            ]);
+            if (version !== conversationVersion || currentGroupId !== groupId) return;
+            groupMemberNames = new Map(members.map(member => [String(member.id).toLowerCase(), member.name]));
+            historyReadyChatId = groupId;
+            renderMessages(history, { kind: "group", groupId });
+            document.getElementById("message-input").disabled = false;
+            document.querySelector("#message-form button[type='submit']").disabled = false;
+        } catch (error) {
+            if (version !== conversationVersion || currentGroupId !== groupId) return;
+            document.getElementById("message-list").innerHTML = `<p class="thread-error">${escapeHtml(error.message || "Group messages could not be loaded.")}</p>`;
+        }
     }
 
     async function loadHistory(chatId) {
@@ -450,6 +713,10 @@
             if (!result.hasNextPage) break;
         }
         return messages.sort((left, right) => new Date(left.sentAt) - new Date(right.sentAt));
+    }
+
+    function loadGroupHistory(groupId) {
+        return apiRequest(`/api/groups/${encodeURIComponent(groupId)}/messages`);
     }
 
     function mergeMessages(first, second) {
@@ -486,7 +753,12 @@
         renderedMessageKeys.add(key);
         list.querySelector(".thread-empty")?.remove();
         const mine = String(message.senderId).toLowerCase() === session.userId.toLowerCase();
-        const sender = mine ? "You" : (chat?.receiverName || "Message");
+        const isGroup = chat?.kind === "group";
+        const sender = mine
+            ? "You"
+            : (isGroup
+                ? groupMemberNames.get(String(message.senderId).toLowerCase()) || "Group member"
+                : chat?.receiverName || "Message");
         const row = document.createElement("article");
         row.className = `message-row${mine ? " is-mine" : ""}`;
         row.innerHTML = `
@@ -514,20 +786,25 @@
         const input = document.getElementById("message-input");
         const button = event.currentTarget.querySelector("button[type='submit']");
         const content = input.value.trim();
-        if (!chat || !chat.receiverId) {
+        if (!currentGroupId && (!chat || !chat.receiverId)) {
             showToast("Conversation unavailable", "Return to messages and open the conversation again.");
             return;
         }
         if (!content) return;
-        if (content.length > 2000) {
-            showToast("Message is too long", "Messages can contain up to 2,000 characters.");
+        const maxLength = currentGroupId ? 4000 : 2000;
+        if (content.length > maxLength) {
+            showToast("Message is too long", `Messages can contain up to ${maxLength.toLocaleString()} characters.`);
             return;
         }
 
         button.disabled = true;
         try {
             await ensureHubConnected();
-            await connection.invoke("SendPrivateMessage", chat.receiverId, content);
+            if (currentGroupId) {
+                await connection.invoke("SendGroupMessage", content, currentGroupId);
+            } else {
+                await connection.invoke("SendPrivateMessage", chat.receiverId, content);
+            }
             input.value = "";
             input.focus();
         } catch {
@@ -559,16 +836,21 @@
         connection.onclose(() => setConnectionStatus("disconnected", "Disconnected · retry"));
 
         try {
-            await connection.start();
+            connectionStartPromise = connection.start();
+            await connectionStartPromise;
             setConnectionStatus("connected", "Connected");
         } catch {
             setConnectionStatus("disconnected", "Connection failed · retry");
             showToast("Live connection unavailable", "Click the connection status to try again.");
+        } finally {
+            connectionStartPromise = null;
         }
     }
 
     async function ensureHubConnected() {
-        if (!connection || connection.state === signalR.HubConnectionState.Disconnected) {
+        if (connection && connection.state === signalR.HubConnectionState.Connecting && connectionStartPromise) {
+            await connectionStartPromise;
+        } else if (!connection || connection.state === signalR.HubConnectionState.Disconnected) {
             await connectHub();
         }
         if (!connection || connection.state !== signalR.HubConnectionState.Connected) {
@@ -584,9 +866,21 @@
     }
 
     function handleReceiveMessage(message) {
-        if (!message?.chatId || !message?.senderId) return;
-        const chatId = String(message.chatId).toLowerCase();
+        const conversationId = message?.chatOrGroupId || message?.chatId;
+        if (!conversationId || !message?.senderId) return;
+        const chatId = String(conversationId).toLowerCase();
         const isMine = String(message.senderId).toLowerCase() === session.userId.toLowerCase();
+
+        const group = groups.find(item => String(item.groupId).toLowerCase() === chatId);
+        if (group) {
+            if (currentGroupId === chatId && historyReadyChatId === chatId) {
+                appendMessage(message, { kind: "group", groupId: chatId });
+            }
+            if (!isMine && currentGroupId !== chatId) {
+                showToast(group.groupName, message.content || "", () => navigate(`/group/${chatId}`));
+            }
+            return;
+        }
 
         updateChatPreview(message, !isMine && chatId !== currentChatId);
 
@@ -619,7 +913,7 @@
     }
 
     function updateChatPreview(message, incrementUnread) {
-        const chatId = String(message.chatId).toLowerCase();
+        const chatId = String(message.chatOrGroupId || message.chatId).toLowerCase();
         let chat = findChat(chatId);
         const isMine = String(message.senderId).toLowerCase() === session.userId.toLowerCase();
         if (!chat) {

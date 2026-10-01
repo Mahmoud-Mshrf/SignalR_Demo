@@ -16,6 +16,18 @@ public sealed class GroupsController(
     IHubContext<ChatHub> chatHub,
     IHubConnectionTracker connectionTracker) : ControllerBase
 {
+    [HttpGet]
+    [ProducesResponseType<List<GroupSummaryDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetGroups(CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+            return Unauthorized();
+
+        var groups = await groupService.GetJoinedGroupsAsync(userId, cancellationToken);
+        return Ok(groups);
+    }
+
     [HttpPost]
     [ProducesResponseType<GroupCreatedResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -56,6 +68,26 @@ public sealed class GroupsController(
             cancellationToken);
 
         return Ok(members);
+    }
+
+    [HttpGet("{groupId:guid}/messages")]
+    [ProducesResponseType<List<SendMessageDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetMessages(
+        Guid groupId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetCurrentUserId(out var userId))
+            return Unauthorized();
+
+        var messages = await groupService.GetGroupMessagesAsync(
+            groupId,
+            userId,
+            cancellationToken);
+
+        return Ok(messages);
     }
 
     [HttpGet("{groupId:guid}/users")]

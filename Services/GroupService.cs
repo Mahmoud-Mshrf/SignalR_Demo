@@ -74,12 +74,16 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         return new SendMessageDto(groupId,message.SenderId,message.Content,message.SentAt);
     }
 
-    public async Task<List<SendMessageDto>> GetGroupMessagesAsync(Guid groupId, Guid userId)
+    public async Task<List<SendMessageDto>> GetGroupMessagesAsync(
+        Guid groupId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
     {
         await GetRequiredGroupParticipantAsync(
             userId,
             groupId,
-            "Only group members can view messages.");
+            "Only group members can view messages.",
+            cancellationToken);
 
         return await context.GroupMessages
             .Where(message => message.GroupId == groupId)
@@ -89,7 +93,31 @@ public sealed class GroupService(AppDbContext context) : IGroupService
                 message.SenderId,
                 message.Content,
                 message.SentAt))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<List<GroupSummaryDto>> GetJoinedGroupsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var groups = await context.GroupParticipants
+            .Where(participant => participant.UserId == userId)
+            .OrderBy(participant => participant.Group.GroupName)
+            .Select(participant => new
+            {
+                participant.GroupId,
+                participant.Group.GroupName,
+                participant.IsAdmin,
+                participant.Group.CreatedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        return groups.Select(group => new GroupSummaryDto(
+            group.GroupId,
+            group.GroupName,
+            group.IsAdmin,
+            new DateTimeOffset(DateTime.SpecifyKind(group.CreatedAt, DateTimeKind.Utc))))
+            .ToList();
     }
 
     public async Task<bool> AddParticipantAsync(
@@ -245,7 +273,13 @@ public interface IGroupService
         Guid creatorId,
         CancellationToken cancellationToken = default);
     Task<SendMessageDto> AddGroupMessageAsync(Guid groupId, string content, Guid userId);
-    Task<List<SendMessageDto>> GetGroupMessagesAsync(Guid groupId, Guid userId);
+    Task<List<SendMessageDto>> GetGroupMessagesAsync(
+        Guid groupId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+    Task<List<GroupSummaryDto>> GetJoinedGroupsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
     Task<bool> AddParticipantAsync(
         Guid managerId,
         Guid newParticipantId,
