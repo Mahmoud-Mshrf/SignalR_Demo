@@ -1,21 +1,52 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
-using SignalR_Demo.Data;
 using SignalR_Demo.Dtos;
-using SignalR_Demo.Models;
 using SignalR_Demo.Models.Chat_Models;
 using SignalR_Demo.Services;
 
 namespace SignalR_Demo.Hubs;
 [Authorize]
-public sealed class ChatHub(IChatService chatService,GroupService groupService)
+public sealed class ChatHub(
+    IChatService chatService,
+    IGroupService groupService,
+    IHubConnectionTracker connectionTracker)
     : Hub<IChatClient>
 {
-    public override Task OnConnectedAsync()
+    public override async Task OnConnectedAsync()
     {
-        // var userGroups = chatService.
-        return base.OnConnectedAsync();
+        if (!Guid.TryParse(Context.UserIdentifier, out var userId))
+            throw new HubException("Invalid user identity.");
+
+        connectionTracker.Track(userId, Context.ConnectionId);
+        try
+        {
+            var userGroups = await groupService.GetJoinedGroupIdsAsync(userId);
+            foreach (var groupId in userGroups)
+            {
+                var roomName = RoomGroup(groupId);
+                await Groups.AddToGroupAsync(Context.ConnectionId, roomName);
+
+                if (!await groupService.IsGroupMemberAsync(userId, groupId, Context.ConnectionAborted))
+                    await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName);
+            }
+        }
+        catch
+        {
+            connectionTracker.Untrack(userId, Context.ConnectionId);
+            throw;
+        }
+
+        await base.OnConnectedAsync();
     }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (Guid.TryParse(Context.UserIdentifier, out var userId))
+            connectionTracker.Untrack(userId, Context.ConnectionId);
+
+        await base.OnDisconnectedAsync(exception);
+    }
+
     public async Task SendPrivateMessage(
         Guid receiverId,
         string content)
@@ -66,13 +97,33 @@ public sealed class ChatHub(IChatService chatService,GroupService groupService)
             receiverId.ToString())
             .ReceiveMessage(dto);
     }
-    public async Task SendGroupMessage(string content,Guid groupId,Guid userId)
+    public async Task SendGroupMessage(string content, Guid groupId)
     {
+        if (!Guid.TryParse(Context.UserIdentifier, out var userId))
+            throw new HubException("Invalid user identity.");
+
         var message =await groupService.AddGroupMessageAsync(groupId,content,userId);
-        await Clients.Group(RoomGroup(groupId.ToString())).ReceiveMessage(message);
+        await Clients.Group(RoomGroup(groupId)).ReceiveMessage(message);
+    }
+    public async Task JoinRoom(Guid groupId)
+    {
+        if (!Guid.TryParse(Context.UserIdentifier, out var userId))
+            throw new HubException("Invalid user identity.");
+
+        if (!await groupService.IsGroupMemberAsync(userId, groupId))
+            throw new HubException("Only group members can join the room.");
+
+        var roomName = RoomGroup(groupId);
+        await Groups.AddToGroupAsync(Context.ConnectionId, roomName, Context.ConnectionAborted);
+
+        if (!await groupService.IsGroupMemberAsync(userId, groupId, Context.ConnectionAborted))
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomName, Context.ConnectionAborted);
+            throw new HubException("Only group members can join the room.");
+        }
     }
 
-    private string RoomGroup(string id) => "group_"+$"{id}";
+    public static string RoomGroup(Guid groupId) => $"group_{groupId}";
 }
 public interface IChatClient
 {

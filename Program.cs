@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SignalR_Demo.Data;
 using SignalR_Demo.Hubs;
+using SignalR_Demo.Middleware;
 using SignalR_Demo.Services;
 using SignalR_Demo.Settings;
 
@@ -14,6 +15,8 @@ var jwtSettings = builder.Configuration.GetSection("JwtSettings").Get<JwtSetting
     ?? throw new InvalidOperationException("JwtSettings configuration is required.");
 
 builder.Services.AddControllers();
+builder.Services.AddExceptionHandler<GroupApiExceptionHandler>();
+builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization();
 builder.Services.AddSignalR();
 builder.Services.Configure<JwtSettings>(builder.Configuration.GetSection("JwtSettings"));
@@ -62,9 +65,12 @@ builder.Services.AddScoped<ITokenService, JwtTokenService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddSingleton<IUserIdProvider,UserIdProvider>();
+builder.Services.AddSingleton<IHubConnectionTracker, HubConnectionTracker>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IGroupService, GroupService>();
 var app = builder.Build();
+app.UseExceptionHandler();
+app.UseStatusCodePages();
 
 await using (var scope = app.Services.CreateAsyncScope())
 {

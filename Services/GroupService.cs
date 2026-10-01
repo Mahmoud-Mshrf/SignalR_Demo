@@ -7,7 +7,10 @@ namespace SignalR_Demo.Services;
 
 public sealed class GroupService(AppDbContext context) : IGroupService
 {
-    public async Task<Guid> CreateGroupAsync(string groupName, Guid creatorId)
+    public async Task<Guid> CreateGroupAsync(
+        string groupName,
+        Guid creatorId,
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(groupName))
             throw new ArgumentException("Group name is required.", nameof(groupName));
@@ -16,7 +19,7 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         if (groupName.Length > 100)
             throw new ArgumentException("Group name cannot exceed 100 characters.", nameof(groupName));
 
-        if (!await context.Users.AnyAsync(user => user.Id == creatorId))
+        if (!await context.Users.AnyAsync(user => user.Id == creatorId, cancellationToken))
             throw new KeyNotFoundException("Creator was not found.");
 
         var now = DateTime.UtcNow;
@@ -37,7 +40,7 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         };
 
         context.Groups.Add(group);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
 
         return group.Id;
     }
@@ -51,14 +54,10 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         if (content.Length > 4000)
             throw new ArgumentException("Message content cannot exceed 4000 characters.", nameof(content));
 
-        if (!await context.Groups.AnyAsync(group => group.Id == groupId))
-            throw new KeyNotFoundException("Group was not found.");
-
-        var isMember = await context.GroupParticipants.AnyAsync(participant =>
-            participant.GroupId == groupId && participant.UserId == userId);
-
-        if (!isMember)
-            throw new UnauthorizedAccessException("Only group members can send messages.");
+        await GetRequiredGroupParticipantAsync(
+            userId,
+            groupId,
+            "Only group members can send messages.");
 
         var message = new GroupMessage
         {
@@ -75,15 +74,38 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         return new SendMessageDto(groupId,message.SenderId,message.Content,message.SentAt);
     }
 
-    public async Task<bool> AddParticipantAsync(Guid managerId, Guid newParticipantId, Guid groupId)
+    public async Task<List<SendMessageDto>> GetGroupMessagesAsync(Guid groupId, Guid userId)
     {
-        await EnsureManagerAsync(managerId, groupId);
+        await GetRequiredGroupParticipantAsync(
+            userId,
+            groupId,
+            "Only group members can view messages.");
 
-        if (!await context.Users.AnyAsync(user => user.Id == newParticipantId))
+        return await context.GroupMessages
+            .Where(message => message.GroupId == groupId)
+            .OrderBy(message => message.SentAt)
+            .Select(message => new SendMessageDto(
+                message.GroupId,
+                message.SenderId,
+                message.Content,
+                message.SentAt))
+            .ToListAsync();
+    }
+
+    public async Task<bool> AddParticipantAsync(
+        Guid managerId,
+        Guid newParticipantId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureManagerAsync(managerId, groupId, cancellationToken);
+
+        if (!await context.Users.AnyAsync(user => user.Id == newParticipantId, cancellationToken))
             throw new KeyNotFoundException("User was not found.");
 
         var alreadyParticipant = await context.GroupParticipants.AnyAsync(participant =>
-            participant.GroupId == groupId && participant.UserId == newParticipantId);
+            participant.GroupId == groupId && participant.UserId == newParticipantId,
+            cancellationToken);
 
         if (alreadyParticipant)
             return false;
@@ -96,17 +118,20 @@ public sealed class GroupService(AppDbContext context) : IGroupService
             LastReadAt = DateTime.UtcNow
         });
 
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    public async Task<List<GroupUserDto>> GetGroupMembersAsync(Guid currentUserId, Guid groupId)
+    public async Task<List<GroupUserDto>> GetGroupMembersAsync(
+        Guid currentUserId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
     {
-        var isMember = await context.GroupParticipants.AnyAsync(participant =>
-            participant.GroupId == groupId && participant.UserId == currentUserId);
-
-        if (!isMember)
-            throw new UnauthorizedAccessException("Only group members can view the member list.");
+        await GetRequiredGroupParticipantAsync(
+            currentUserId,
+            groupId,
+            "Only group members can view the member list.",
+            cancellationToken);
 
         return await context.GroupParticipants
             .Where(participant => participant.GroupId == groupId)
@@ -115,7 +140,7 @@ public sealed class GroupService(AppDbContext context) : IGroupService
                 participant.UserId,
                 participant.User.Name,
                 true))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
     public Task<List<Guid>> GetJoinedGroupIdsAsync(Guid userId)
@@ -126,9 +151,22 @@ public sealed class GroupService(AppDbContext context) : IGroupService
             .ToListAsync();
     }
 
-    public async Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(Guid managerId, Guid groupId)
+    public Task<bool> IsGroupMemberAsync(
+        Guid userId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
     {
-        await EnsureManagerAsync(managerId, groupId);
+        return context.GroupParticipants.AnyAsync(
+            participant => participant.UserId == userId && participant.GroupId == groupId,
+            cancellationToken);
+    }
+
+    public async Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(
+        Guid managerId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
+    {
+        await EnsureManagerAsync(managerId, groupId, cancellationToken);
 
         return await context.Users
             .OrderBy(user => user.Name)
@@ -137,15 +175,20 @@ public sealed class GroupService(AppDbContext context) : IGroupService
                 user.Name,
                 context.GroupParticipants.Any(participant =>
                     participant.GroupId == groupId && participant.UserId == user.Id)))
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> RemoveParticipantAsync(Guid managerId, Guid participantId, Guid groupId)
+    public async Task<bool> RemoveParticipantAsync(
+        Guid managerId,
+        Guid participantId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
     {
-        await EnsureManagerAsync(managerId, groupId);
+        await EnsureManagerAsync(managerId, groupId, cancellationToken);
 
         var participant = await context.GroupParticipants.FirstOrDefaultAsync(item =>
-            item.GroupId == groupId && item.UserId == participantId);
+            item.GroupId == groupId && item.UserId == participantId,
+            cancellationToken);
 
         if (participant is null)
             return false;
@@ -154,32 +197,76 @@ public sealed class GroupService(AppDbContext context) : IGroupService
             throw new InvalidOperationException("The group admin cannot be removed.");
 
         context.GroupParticipants.Remove(participant);
-        await context.SaveChangesAsync();
+        await context.SaveChangesAsync(cancellationToken);
         return true;
     }
 
-    private async Task EnsureManagerAsync(Guid managerId, Guid groupId)
+    private async Task EnsureManagerAsync(
+        Guid managerId,
+        Guid groupId,
+        CancellationToken cancellationToken = default)
     {
-        if (!await context.Groups.AnyAsync(group => group.Id == groupId))
+        var manager = await GetRequiredGroupParticipantAsync(
+            managerId,
+            groupId,
+            "Only group members can manage members.",
+            cancellationToken);
+
+        if (!manager.IsAdmin)
+            throw new UnauthorizedAccessException("Only the group admin can manage members.");
+    }
+
+    private async Task<GroupParticipant> GetRequiredGroupParticipantAsync(
+        Guid userId,
+        Guid groupId,
+        string unauthorizedMessage,
+        CancellationToken cancellationToken = default)
+    {
+        var participant = await context.GroupParticipants
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                item => item.GroupId == groupId && item.UserId == userId,
+                cancellationToken);
+
+        if (participant is not null)
+            return participant;
+
+        if (!await context.Groups.AnyAsync(group => group.Id == groupId, cancellationToken))
             throw new KeyNotFoundException("Group was not found.");
 
-        var isManager = await context.GroupParticipants.AnyAsync(participant =>
-            participant.GroupId == groupId &&
-            participant.UserId == managerId &&
-            participant.IsAdmin);
-
-        if (!isManager)
-            throw new UnauthorizedAccessException("Only the group admin can manage members.");
+        throw new UnauthorizedAccessException(unauthorizedMessage);
     }
 }
 
 public interface IGroupService
 {
-    Task<Guid> CreateGroupAsync(string groupName, Guid creatorId);
+    Task<Guid> CreateGroupAsync(
+        string groupName,
+        Guid creatorId,
+        CancellationToken cancellationToken = default);
     Task<SendMessageDto> AddGroupMessageAsync(Guid groupId, string content, Guid userId);
-    Task<bool> AddParticipantAsync(Guid managerId, Guid newParticipantId, Guid groupId);
-    Task<bool> RemoveParticipantAsync(Guid managerId, Guid participantId, Guid groupId);
-    Task<List<GroupUserDto>> GetGroupMembersAsync(Guid currentUserId, Guid groupId);
+    Task<List<SendMessageDto>> GetGroupMessagesAsync(Guid groupId, Guid userId);
+    Task<bool> AddParticipantAsync(
+        Guid managerId,
+        Guid newParticipantId,
+        Guid groupId,
+        CancellationToken cancellationToken = default);
+    Task<bool> RemoveParticipantAsync(
+        Guid managerId,
+        Guid participantId,
+        Guid groupId,
+        CancellationToken cancellationToken = default);
+    Task<List<GroupUserDto>> GetGroupMembersAsync(
+        Guid currentUserId,
+        Guid groupId,
+        CancellationToken cancellationToken = default);
     Task<List<Guid>> GetJoinedGroupIdsAsync(Guid userId);
-    Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(Guid managerId, Guid groupId);
+    Task<bool> IsGroupMemberAsync(
+        Guid userId,
+        Guid groupId,
+        CancellationToken cancellationToken = default);
+    Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(
+        Guid managerId,
+        Guid groupId,
+        CancellationToken cancellationToken = default);
 }

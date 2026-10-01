@@ -59,3 +59,38 @@ Authorization: Bearer {{token1}}
 ### get chats
 GET {{baseUrl}}/api/chats
 Authorization: Bearer {{token2}}
+
+### Create a group
+# @name createGroup
+POST {{baseUrl}}/api/groups
+Authorization: Bearer {{token1}}
+Content-Type: application/json
+
+{
+  "groupName": "Project Team"
+}
+
+@groupId = {{createGroup.response.body.$.groupId}}
+@newParticipantId = 00000000-0000-0000-0000-000000000000
+@participantId = {{newParticipantId}}
+
+### List group members
+GET {{baseUrl}}/api/groups/{{groupId}}/members
+Authorization: Bearer {{token1}}
+
+### List users and their group membership status (admin only)
+GET {{baseUrl}}/api/groups/{{groupId}}/users
+Authorization: Bearer {{token1}}
+
+### Add a member (admin only)
+POST {{baseUrl}}/api/groups/{{groupId}}/members
+Authorization: Bearer {{token1}}
+Content-Type: application/json
+
+{
+  "newParticipantId": "{{newParticipantId}}"
+}
+
+### Remove a member (admin only)
+DELETE {{baseUrl}}/api/groups/{{groupId}}/members/{{participantId}}
+Authorization: Bearer {{token1}}
