@@ -87,16 +87,18 @@ public sealed class ChatService(AppDbContext context)
     {
         var chats = await context.Chats
             .Where(chat => chat.Participants.Any(participant => participant.UserId == UserId))
+            .OrderByDescending(chat => chat.Messages.Max(message => message.SentAt))
             .Skip((page - 1) * size)
             .Take(size)
             .Select(chat => new
             {
                 ChatId = chat.Id,
                 Receiver = chat.Participants.First(participant => participant.UserId != UserId),
-                LastMessage = chat.Messages.OrderBy(message => message.SentAt).First(),
+                LastMessage = chat.Messages.OrderByDescending(message => message.SentAt).First(),
                 UnreadMessages = chat.Messages.Count(message =>
+                    message.SenderId != UserId &&
                     message.SentAt > chat.Participants
-                        .First(participant => participant.UserId != UserId)
+                        .First(participant => participant.UserId == UserId)
                         .LastReadAt)
             })
             .Select(chat => new ChatDto(
@@ -118,7 +120,7 @@ public sealed class ChatService(AppDbContext context)
             Page = page,
             PageSize = size,
             TotalCount = itemsCount,
-            HasNextPage = (((page - 1) * size) + chats.Count) > itemsCount
+            HasNextPage = (((page - 1) * size) + chats.Count) < itemsCount
         };
     }
 
@@ -134,7 +136,12 @@ public sealed class ChatService(AppDbContext context)
             throw new UnauthorizedAccessException();
         }
 
-        var messages =await context.Messages.Where(x=>x.ChatId==ChatId).Skip((page - 1)* size).Take(size).OrderBy(x=>x.SentAt).ToListAsync();
+        var messages = await context.Messages
+            .Where(message => message.ChatId == ChatId)
+            .OrderBy(message => message.SentAt)
+            .Skip((page - 1) * size)
+            .Take(size)
+            .ToListAsync();
         var msgs= new List<ChatMessageDto>();
         foreach (var msg in messages)
         {

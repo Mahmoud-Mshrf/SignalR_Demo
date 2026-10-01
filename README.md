@@ -51,21 +51,19 @@ Successful registration and login return HTTP 200 with a response like:
 
 Invalid request data returns HTTP 400. Registering an existing email returns HTTP 409, and invalid login credentials return HTTP 401.
 
-## Test private chat
+## Run the chat frontend
 
-1. Start the application using the HTTPS profile.
-2. In a second terminal, serve the test page from its directory:
+Start the application with the HTTPS profile:
 
-   ```powershell
-   cd chat-test
-   python -m http.server 5000
-   ```
+```powershell
+dotnet run --launch-profile https
+```
 
-3. Open `http://localhost:5000/signaR_test.html` in two browser tabs. The server allows this origin for SignalR connections.
-4. In the first tab, paste the first account's `accessToken` and connect. In the second tab, paste the other account's token and connect.
-5. In each tab, enter the *other* account's `userId` as the receiver ID. Send a message from either tab; it should appear in both connected clients.
+Open `https://localhost:7061` and sign in with an account created through `request.http` (or register one there first). The frontend uses the login response's user ID and access token; it stores them in `sessionStorage` for that browser tab. The browser may ask you to trust the local HTTPS development certificate.
 
-The chat hub requires a valid JWT. Messages must be non-empty, no longer than 2,000 characters, and cannot be sent to the sender's own account. Access tokens expire after the configured development lifetime, currently 15 minutes; log in again to obtain another token.
+For a two-user test, sign in as each account in separate browser profiles or one regular and one private window. Use the copy-ID button beside the signed-in user's name to share that user's ID. Select **New conversation**, enter the other user's ID and an initial message, then send. That first message creates the chat through `SendPrivateMessage`; subsequent messages appear in the chat list and update live. Open the same URL in each browser profile to verify unread notifications, history, and read state.
+
+The chat hub requires a valid JWT. Messages must be non-empty, no longer than 2,000 characters, and cannot be sent to the sender's own account. Access tokens expire after the configured development lifetime, currently 15 minutes; log in again to obtain another token. The original low-level hub test remains at `chat-test/signaR_test.html`.
 
 ## Test the dashboard broadcast
 
