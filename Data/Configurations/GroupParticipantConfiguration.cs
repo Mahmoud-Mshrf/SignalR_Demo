@@ -28,5 +28,8 @@ public sealed class GroupParticipantConfiguration : IEntityTypeConfiguration<Gro
 
         builder.Property(x => x.LastReadAt)
             .IsRequired();
+
+        builder.Property(x => x.IsAdmin)
+            .IsRequired();
     }
 }

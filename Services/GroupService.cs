@@ -30,6 +30,7 @@ public sealed class GroupService(AppDbContext context) : IGroupService
                 new GroupParticipant
                 {
                     UserId = creatorId,
+                    IsAdmin = true,
                     LastReadAt = now
                 }
             ]
@@ -41,10 +42,9 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         return group.Id;
     }
 
-    public async Task<bool> AddParticipantAsync(Guid newParticipantId, Guid groupId)
+    public async Task<bool> AddParticipantAsync(Guid managerId, Guid newParticipantId, Guid groupId)
     {
-        if (!await context.Groups.AnyAsync(group => group.Id == groupId))
-            throw new KeyNotFoundException("Group was not found.");
+        await EnsureManagerAsync(managerId, groupId);
 
         if (!await context.Users.AnyAsync(user => user.Id == newParticipantId))
             throw new KeyNotFoundException("User was not found.");
@@ -59,6 +59,7 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         {
             GroupId = groupId,
             UserId = newParticipantId,
+            IsAdmin = false,
             LastReadAt = DateTime.UtcNow
         });
 
@@ -66,19 +67,76 @@ public sealed class GroupService(AppDbContext context) : IGroupService
         return true;
     }
 
-    public Task<List<GroupUserDto>> GetUsersExceptAsync(Guid currentUserId)
+    public async Task<List<GroupUserDto>> GetGroupMembersAsync(Guid currentUserId, Guid groupId)
     {
-        return context.Users
-            .Where(user => user.Id != currentUserId)
-            .OrderBy(user => user.Name)
-            .Select(user => new GroupUserDto(user.Id, user.Name))
+        var isMember = await context.GroupParticipants.AnyAsync(participant =>
+            participant.GroupId == groupId && participant.UserId == currentUserId);
+
+        if (!isMember)
+            throw new UnauthorizedAccessException("Only group members can view the member list.");
+
+        return await context.GroupParticipants
+            .Where(participant => participant.GroupId == groupId)
+            .OrderBy(participant => participant.User.Name)
+            .Select(participant => new GroupUserDto(
+                participant.UserId,
+                participant.User.Name,
+                true))
             .ToListAsync();
+    }
+
+    public async Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(Guid managerId, Guid groupId)
+    {
+        await EnsureManagerAsync(managerId, groupId);
+
+        return await context.Users
+            .OrderBy(user => user.Name)
+            .Select(user => new GroupUserDto(
+                user.Id,
+                user.Name,
+                context.GroupParticipants.Any(participant =>
+                    participant.GroupId == groupId && participant.UserId == user.Id)))
+            .ToListAsync();
+    }
+
+    public async Task<bool> RemoveParticipantAsync(Guid managerId, Guid participantId, Guid groupId)
+    {
+        await EnsureManagerAsync(managerId, groupId);
+
+        var participant = await context.GroupParticipants.FirstOrDefaultAsync(item =>
+            item.GroupId == groupId && item.UserId == participantId);
+
+        if (participant is null)
+            return false;
+
+        if (participant.IsAdmin)
+            throw new InvalidOperationException("The group admin cannot be removed.");
+
+        context.GroupParticipants.Remove(participant);
+        await context.SaveChangesAsync();
+        return true;
+    }
+
+    private async Task EnsureManagerAsync(Guid managerId, Guid groupId)
+    {
+        if (!await context.Groups.AnyAsync(group => group.Id == groupId))
+            throw new KeyNotFoundException("Group was not found.");
+
+        var isManager = await context.GroupParticipants.AnyAsync(participant =>
+            participant.GroupId == groupId &&
+            participant.UserId == managerId &&
+            participant.IsAdmin);
+
+        if (!isManager)
+            throw new UnauthorizedAccessException("Only the group admin can manage members.");
     }
 }
 
 public interface IGroupService
 {
     Task<Guid> CreateGroupAsync(string groupName, Guid creatorId);
-    Task<bool> AddParticipantAsync(Guid newParticipantId, Guid groupId);
-    Task<List<GroupUserDto>> GetUsersExceptAsync(Guid currentUserId);
+    Task<bool> AddParticipantAsync(Guid managerId, Guid newParticipantId, Guid groupId);
+    Task<bool> RemoveParticipantAsync(Guid managerId, Guid participantId, Guid groupId);
+    Task<List<GroupUserDto>> GetGroupMembersAsync(Guid currentUserId, Guid groupId);
+    Task<List<GroupUserDto>> GetAllUsersWithMembershipAsync(Guid managerId, Guid groupId);
 }
