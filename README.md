@@ -1,15 +1,18 @@
 # SignalR Demo
 
-An ASP.NET Core 10 sample application with JWT authentication, SQLite persistence, a browser-based private messaging client, and real-time updates using SignalR.
+An ASP.NET Core 10 messaging application with JWT authentication, SQLite persistence, browser-based direct and group conversations, and real-time updates using SignalR.
 
 ## Features
 
-- Register and sign in with `POST /api/auth/register` and `POST /api/auth/login`.
-- Persist users, chats, participants, and messages to SQLite (`signalr_demo.db`). The database is created automatically on startup.
-- Send private messages over the authenticated `/hubs/chat` SignalR hub. Messages are saved and delivered to both users' active connections.
-- Browse conversations and paginated message history, and mark conversations as read through authenticated REST endpoints.
-- Serve the chat interface from the application root (`/`). It supports sign-in, starting conversations by user ID, live messages, unread counts, and reconnecting to the chat hub.
-- Broadcast dashboard messages through `/hub/dashboard`. This demonstration hub is currently unauthenticated.
+- Register and sign in in the browser or with `POST /api/auth/register` and `POST /api/auth/login`.
+- Persist users, direct chats, groups, participants, and messages to SQLite (`signalr_demo.db`). A new database schema is created automatically on startup.
+- Send private and group messages over the authenticated `/hubs/chat` SignalR hub. Messages are persisted before being broadcast.
+- Browse paginated direct-chat history and group history, view group members, and mark conversations as read through authenticated REST endpoints.
+- Create groups and manage members in the browser. The creator is the group admin; only the admin can add or remove members and inspect the full user roster.
+- Receive real-time group-added and group-removed notifications. Active sessions join or leave the corresponding SignalR room without requiring a page refresh.
+- See persistent unread counts for direct chats and groups, including messages received while offline. Opening a conversation marks it as read.
+- Serve the chat interface from the application root (`/`). It includes registration, sign-in, direct and group conversations, member management, and reconnecting to the chat hub.
+- Send dashboard-wide text with `/hub/dashboard`. This hub is restricted to users with the `Manager` or `SuperAdmin` role.
 
 ## Requirements and Dependencies
 
@@ -41,7 +44,7 @@ For HTTP-only local development, use `dotnet run --launch-profile http`; this pr
 
 ## Configuration
 
-`appsettings.json` contains the SQLite connection string. `appsettings.Development.json` contains local JWT settings, including the signing key, issuer, audience, and 15-minute access-token lifetime. The development signing key is public sample configuration and must not be used in production.
+`appsettings.json` contains the SQLite connection string. `appsettings.Development.json` contains local JWT settings, including the signing key, issuer, audience, and access-token lifetime. The development signing key is public sample configuration and must not be used in production.
 
 Override settings with .NET environment variables. For example, in PowerShell:
 
@@ -53,9 +56,11 @@ dotnet run --launch-profile https
 
 Configure a strong, private signing key and production-appropriate issuer and audience for deployment. The CORS policy currently allows `http://localhost:5000` for a separately hosted frontend; change the allowed origin in `Program.cs` if using a different frontend origin. The built-in frontend is served from the same origin as the API and does not need a separate frontend server.
 
-## Create Accounts and Sign In
+The application currently calls EF Core `EnsureCreated` at startup. This creates tables for a new database but does not migrate an existing database when the model changes. Use EF Core migrations for databases that need schema upgrades.
 
-The browser UI currently provides sign-in only. Create accounts using the REST Client requests in `request.http` or another HTTP client. For example:
+## Accounts and Sign In
+
+Create an account from the browser's sign-in screen, or use the REST Client requests in `request.http`. For example:
 
 ```http
 POST http://localhost:5089/api/auth/register
@@ -69,7 +74,7 @@ Content-Type: application/json
 }
 ```
 
-Then sign in at `POST /api/auth/login` with the same email and password. Both endpoints return HTTP 200 with a response shaped like:
+Registration returns HTTP 200 with a response shaped like:
 
 ```json
 {
@@ -80,11 +85,15 @@ Then sign in at `POST /api/auth/login` with the same email and password. Both en
 }
 ```
 
-Registration requires a name (1-100 characters), valid email, phone number (1-32 characters), and password (8-128 characters). Email addresses are normalized and must be unique. Invalid request data returns HTTP 400, an existing email returns HTTP 409, and invalid login credentials return HTTP 401. In `request.http`, use the returned token for each user in its `@token1` / `@token2` variable; any hard-coded sample token may be expired.
+Sign in at `POST /api/auth/login` with the same email and password. Registration requires a name (1-100 characters), valid email, phone number (1-32 characters), and password (8-128 characters). Email addresses are normalized and must be unique. Invalid request data returns HTTP 400, an existing email returns HTTP 409, and invalid login credentials return HTTP 401. In `request.http`, use the returned token for each user in its `@token1` / `@token2` variable; any hard-coded sample token may be expired.
 
 ## Use the Chat UI
 
-Sign in at `https://localhost:7061` with an account created above. The access token and user ID are kept in that browser tab's `sessionStorage`; they are removed on sign-out. For a two-user test, sign in as each account in separate browser profiles or in a regular and private window. Copy one user's ID using the **ID** button, then in the other window choose **New conversation**, paste that ID, and send the first message. That message creates the conversation. Select the conversation to load history; new messages, unread counts, and read state update as you use the app.
+Sign in at `https://localhost:7061` with an account created above. The access token and user ID are kept in that browser tab's `sessionStorage`; they are removed on sign-out. For a two-user test, sign in as each account in separate browser profiles or in regular and private windows.
+
+For a direct conversation, copy one user's ID with the **ID** button. In the other account, choose **New conversation**, paste that ID, and send the first message. The first message creates the chat.
+
+For a group conversation, choose **Create a group**. The creator is its admin. Use **Manage** to see all users and add or remove members; all group members can use **Members** to see the joined users. A newly added online user receives a notification and joins the group without refreshing. Removed users lose access immediately. Group unread badges include messages received while offline and clear when the group is opened.
 
 Messages must contain 1-2,000 characters and cannot be sent to your own user ID. Access tokens expire after the configured lifetime (15 minutes by default); sign in again when the session expires. There is currently no refresh-token endpoint.
 
@@ -99,36 +108,46 @@ All chat endpoints require `Authorization: Bearer <accessToken>`.
 | `GET /api/chats?page=1&size=10` | List the signed-in user's chats, newest first, including the last message and unread count |
 | `GET /api/chats/{chatId}/messages?page=1&size=10` | Get paginated messages for a chat the user participates in |
 | `POST /api/chats/{chatId}/read` | Mark a chat as read; returns HTTP 204 on success |
+| `GET /api/groups` | List groups the signed-in user joined, including admin status and unread count |
+| `POST /api/groups` | Create a group; the signed-in user becomes its admin |
+| `GET /api/groups/{groupId}/members` | List joined members; available to group members |
+| `GET /api/groups/{groupId}/messages` | Get message history; available to group members |
+| `POST /api/groups/{groupId}/read` | Mark group messages as read; returns HTTP 204 |
+| `GET /api/groups/{groupId}/users` | Admin-only roster of all users, including each user's joined status |
+| `POST /api/groups/{groupId}/members` | Admin-only add-member operation |
+| `DELETE /api/groups/{groupId}/members/{participantId}` | Admin-only remove-member operation |
 
-Paginated responses include `items`, `page`, `pageSize`, `totalCount`, and `hasNextPage`. For example, after logging in and saving the token:
+Chat list and history endpoints are paginated, accept page sizes from 1 to 100, and return `items`, `page`, `pageSize`, `totalCount`, and `hasNextPage`. Group history currently returns all messages in chronological order. For example, after logging in and saving the token:
 
 ```http
 GET http://localhost:5089/api/chats?page=1&size=10
 Authorization: Bearer <accessToken>
 ```
 
-`GET /api/chats/{chatId}/messages` returns HTTP 404 if the chat does not exist and HTTP 403 if the signed-in user is not a participant.
+Endpoints require a JWT. Group creation and membership operations use the authenticated user's ID from their token; clients cannot select a manager ID. Invalid request data returns HTTP 400, missing resources return HTTP 404, nonmember or nonadmin access returns HTTP 403, and duplicate add-member requests return HTTP 409. Error responses use Problem Details.
 
 ## SignalR Hubs
 
 | Route | Authentication | Methods and events |
 | --- | --- | --- |
-| `/hubs/chat` | Required | Invoke `SendPrivateMessage(receiverId, content)`; clients receive `ReceiveMessage` with `chatId`, `senderId`, `content`, and `sentAt` |
-| `/hub/dashboard` | Not required | Invoke `SendAll(text)`; clients receive `ReceiveText` |
+| `/hubs/chat` | Required | Invoke `SendPrivateMessage(receiverId, content)`, `SendGroupMessage(content, groupId)`, or `JoinRoom(groupId)`; clients receive `ReceiveMessage`, `GroupAdded`, and `GroupRemoved` |
+| `/hub/dashboard` | Manager or SuperAdmin role | Invoke `SendAll(text)`; connected clients receive `ReceiveText` |
 | `/hubs/notifications` | Not required | Endpoint is registered, but no notification-sending method is implemented |
 
-The chat browser client obtains the JWT via `accessTokenFactory`; the server accepts it for hub requests under `/hubs`. The included page loads the SignalR JavaScript client, so the dashboard broadcast can be tested in its developer console:
+The chat browser client obtains its JWT via `accessTokenFactory`; the server accepts hub tokens under `/hubs`. On connection, the server joins the user's existing groups. `JoinRoom` verifies membership before joining, and the sender ID for group messages comes from the authenticated connection. Group membership changes notify all of the affected user's active connections. The dashboard broadcast can be tested with a manager or superadmin token:
 
 ```javascript
 const dashboard = new signalR.HubConnectionBuilder()
-  .withUrl("https://localhost:7061/hub/dashboard")
+  .withUrl("https://localhost:7061/hub/dashboard", {
+    accessTokenFactory: () => accessToken
+  })
   .build();
 dashboard.on("ReceiveText", text => console.log(text));
 await dashboard.start();
 await dashboard.invoke("SendAll", "Dashboard test");
 ```
 
-Open the page in another tab and connect there as well to see the broadcast in both consoles. The dashboard hub is intentionally unauthenticated in this demo; protect it before exposing it beyond local testing.
+Open the page in another tab and connect there as well to see the broadcast in both consoles. The dashboard hub is restricted to users whose JWT role is `Manager` or `SuperAdmin`.
 
 ## Data and Test Client
 
